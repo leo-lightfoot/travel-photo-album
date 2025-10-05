@@ -1,0 +1,36 @@
+{
+  "public": [
+    {
+      "id": "test-album",
+      "name": "My test Album",
+      "description": "Testing this app",
+      "coverImage": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test1.jpg",
+      "date": "2025-10-05",
+      "category": "personal",
+      "photoCount": 4,
+      "photos": [
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test1.jpg",
+          "caption": "Photo 1",
+          "date": "2025-10-05"
+        },
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test2.jpg",
+          "caption": "Photo 2",
+          "date": "2025-10-05"
+        },
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test3.jpg",
+          "caption": "Photo 3",
+          "date": "2025-10-05"
+        },
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test4.jpg",
+          "caption": "Photo 4",
+          "date": "2025-10-05"
+        }
+      ]
+    }
+  ],
+  "private": []
+}

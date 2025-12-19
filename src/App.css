@@ -1,42 +1,120 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* MapLibre tooltip styling */
+.maplibregl-popup.marker-tooltip .maplibregl-popup-content {
+  padding: 8px 12px;
+  background: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 250px;
+}
+
+.maplibregl-popup.marker-tooltip .maplibregl-popup-tip {
+  border-top-color: white;
+}
+
+/* Smooth map transitions */
+.maplibregl-map {
+  transition: all 0.3s ease-out;
+}
+
+/* Location badge styling */
+.location-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.3);
+  letter-spacing: 0.3px;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .custom-marker svg {
+    width: 28px !important;
+    height: 38px !important;
   }
-  to {
-    transform: rotate(360deg);
+
+  .cluster-marker > div {
+    font-size: 12px !important;
+  }
+
+  .maplibregl-popup.marker-tooltip .maplibregl-popup-content {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  /* Better touch targets */
+  .custom-marker,
+  .cluster-marker {
+    padding: 8px;
+    margin: -8px;
+  }
+
+  /* Optimize map controls for mobile */
+  .maplibregl-ctrl-group {
+    margin: 10px !important;
+  }
+
+  .maplibregl-ctrl-group button {
+    width: 35px !important;
+    height: 35px !important;
+  }
+
+  /* Timeline card optimizations */
+  .location-badge {
+    font-size: 10px;
+    padding: 3px 8px;
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+/* Extra small devices */
+@media (max-width: 480px) {
+  .custom-marker svg {
+    width: 24px !important;
+    height: 32px !important;
+  }
+
+  .location-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+
+  .location-badge .lucide {
+    width: 10px !important;
+    height: 10px !important;
   }
 }
 
-.card {
-  padding: 2em;
+/* Smooth transitions for all interactive elements */
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
-.read-the-docs {
-  color: #888;
+button, a {
+  touch-action: manipulation;
 }

@@ -40,9 +40,16 @@ export default function UploadModal({ onClose, onSuccess }) {
       try {
         map.current = new maplibregl.Map({
           container: mapContainer.current,
-          style: 'https://demotiles.maplibre.org/style.json',
+          style: `https://api.maptiler.com/maps/streets-v2/style.json?key=${import.meta.env.VITE_MAPTILER_API_KEY}`,
           center: [0, 20],
-          zoom: 2
+          zoom: 2,
+          minZoom: 1,
+          maxZoom: 18,
+          renderWorldCopies: false,
+          // Mobile optimizations
+          pitchWithRotate: false,
+          dragRotate: false,
+          touchZoomRotate: false
         })
 
         map.current.addControl(new maplibregl.NavigationControl(), 'top-right')
@@ -66,7 +73,24 @@ export default function UploadModal({ onClose, onSuccess }) {
           if (marker.current) {
             marker.current.setLngLat([lng, lat])
           } else {
-            marker.current = new maplibregl.Marker({ color: '#0284c7' })
+            // Create custom pin marker
+            const el = document.createElement('div')
+            el.innerHTML = `
+              <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="40" rx="6" ry="2" fill="rgba(0,0,0,0.2)"/>
+                <path d="M16 0C9.373 0 4 5.373 4 12c0 8.25 12 30 12 30s12-21.75 12-30c0-6.627-5.373-12-12-12z"
+                      fill="#0284c7" stroke="white" stroke-width="2"/>
+                <circle cx="16" cy="12" r="5" fill="white"/>
+                <circle cx="16" cy="12" r="3" fill="#0284c7"/>
+              </svg>
+            `
+            el.style.cssText = `
+              width: 32px;
+              height: 42px;
+              filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+            `
+
+            marker.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
               .setLngLat([lng, lat])
               .addTo(map.current)
           }

@@ -116,31 +116,32 @@ function App() {
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <MapPin className="w-8 h-8 text-primary-600" />
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16">
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <MapPin className="w-6 h-6 sm:w-8 sm:h-8 text-primary-600" />
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Travel Album</h1>
-                <p className="text-xs text-gray-500">{pins.length} memories</p>
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900">Travel Album</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">{pins.length} memories</p>
               </div>
             </div>
 
-            <div className="flex-1 max-w-xl mx-8">
-              <SearchBar 
+            <div className="hidden md:flex flex-1 max-w-xl mx-8">
+              <SearchBar
                 value={searchQuery}
                 onChange={setSearchQuery}
                 placeholder="Search by location, title, or tags..."
               />
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1 sm:space-x-2">
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                className="flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm sm:text-base"
               >
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">Add Photos</span>
+                <span className="sm:hidden">Add</span>
               </button>
 
               <button
@@ -148,39 +149,50 @@ function App() {
                 className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                 title="Logout"
               >
-                <LogOut className="w-5 h-5" />
+                <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
           </div>
         </div>
       </header>
 
+      {/* Mobile Search Bar */}
+      <div className="md:hidden bg-white border-b border-gray-200 px-3 py-2">
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search..."
+        />
+      </div>
+
       {/* View Toggle */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
           <div className="flex space-x-1 py-2">
             <button
               onClick={() => setCurrentView('map')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 rounded-lg transition-colors text-sm sm:text-base ${
                 currentView === 'map'
                   ? 'bg-primary-100 text-primary-700 font-medium'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
               <Map className="w-4 h-4" />
-              <span>Map View</span>
+              <span className="hidden sm:inline">Map View</span>
+              <span className="sm:hidden">Map</span>
             </button>
 
             <button
               onClick={() => setCurrentView('timeline')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex items-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-2 rounded-lg transition-colors text-sm sm:text-base ${
                 currentView === 'timeline'
                   ? 'bg-primary-100 text-primary-700 font-medium'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
               <Calendar className="w-4 h-4" />
-              <span>Timeline</span>
+              <span className="hidden sm:inline">Timeline</span>
+              <span className="sm:hidden">Timeline</span>
             </button>
           </div>
         </div>

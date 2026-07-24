@@ -9,3 +9,9 @@ Thumbs.db
 .idea/
 *.swp
 *.log
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example

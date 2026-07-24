@@ -74,14 +74,6 @@ function generateAlbumId(folderName) {
   return folderName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-function getImageMetadata(imagePath) {
-  const stats = fs.statSync(imagePath);
-  return {
-    modified: stats.mtime,
-    size: stats.size
-  };
-}
-
 async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
   const metadata = loadAlbumMetadata(albumPath);
   const images = getImageFiles(albumPath);
@@ -111,9 +103,6 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
 
   // Generate photo entries
   const photos = images.map((img, idx) => {
-    const imgPath = path.join(albumPath, img);
-    const imgMetadata = getImageMetadata(imgPath);
-    
     return {
       url: `${CONFIG.r2BaseUrl}/${r2BasePath}/${albumFolder}/${img}`,
       caption: metadata.captions?.[img] || `Photo ${idx + 1}`,

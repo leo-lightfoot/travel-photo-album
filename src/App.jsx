@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Calendar, Tag, X, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, Calendar, Tag, X, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
 
 const PhotoGallery = () => {
   const [albums, setAlbums] = useState({ public: [], private: [] });
+  const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'error'
   const [view, setView] = useState('albums'); // 'albums' | 'album-detail'
   const [currentAlbum, setCurrentAlbum] = useState(null);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -17,9 +18,18 @@ const PhotoGallery = () => {
   // Load albums from albums.json (in production)
   useEffect(() => {
     fetch('/albums.json')
-      .then(res => res.json())
-      .then(data => setAlbums(data))
-      .catch(err => console.error('Failed to load albums:', err));
+      .then(res => {
+        if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        setAlbums(data);
+        setLoadState('ready');
+      })
+      .catch(err => {
+        console.error('Failed to load albums:', err);
+        setLoadState('error');
+      });
   }, []);
 
   // Get all categories
@@ -46,7 +56,7 @@ const PhotoGallery = () => {
   };
 
   const handleUnlockAlbum = (album) => {
-    if (codeInput.trim().toUpperCase() === album.secretCode) {
+    if (codeInput.trim().toUpperCase() === album.secretCode.trim().toUpperCase()) {
       setUnlockedAlbums(new Set([...unlockedAlbums, album.id]));
       setAttemptingUnlock(null);
       setCodeInput('');
@@ -111,7 +121,22 @@ const PhotoGallery = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {view === 'albums' && (
+        {loadState === 'loading' && (
+          <div className="flex flex-col items-center justify-center py-24 text-slate-500">
+            <Loader2 className="w-8 h-8 animate-spin mb-3" />
+            <p>Loading albums...</p>
+          </div>
+        )}
+
+        {loadState === 'error' && (
+          <div className="flex flex-col items-center justify-center py-24 text-center text-slate-600">
+            <AlertCircle className="w-8 h-8 text-red-500 mb-3" />
+            <p className="mb-1">Couldn't load the gallery.</p>
+            <p className="text-sm text-slate-400">Please refresh the page, or try again shortly.</p>
+          </div>
+        )}
+
+        {loadState === 'ready' && view === 'albums' && (
           <>
             {/* Controls */}
             <div className="flex flex-wrap gap-4 mb-8 items-center justify-between">

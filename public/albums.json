@@ -12,7 +12,8 @@
         {
           "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test1.jpg",
           "caption": "Photo 1",
-          "date": "2025-10-05"
+          "date": "2025-10-05",
+          "featured": true
         },
         {
           "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test2.jpg",

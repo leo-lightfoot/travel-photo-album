@@ -102,11 +102,13 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
   }
 
   // Generate photo entries
+  const featuredPhotos = metadata.featuredPhotos || [];
   const photos = images.map((img, idx) => {
     return {
       url: `${CONFIG.r2BaseUrl}/${r2BasePath}/${albumFolder}/${img}`,
       caption: metadata.captions?.[img] || `Photo ${idx + 1}`,
-      date: dateStr
+      date: dateStr,
+      ...(featuredPhotos.includes(img) && { featured: true })
     };
   });
 
@@ -226,6 +228,7 @@ function printExampleMetadata() {
     coverImage: "IMG_001.jpg",
     tags: ["wedding", "tuscany", "summer"],
     secretCode: "WEDDING2024",
+    featuredPhotos: ["IMG_001.jpg"],
     captions: {
       "IMG_001.jpg": "The ceremony",
       "IMG_002.jpg": "First dance",

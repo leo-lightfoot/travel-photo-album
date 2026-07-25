@@ -24,12 +24,16 @@ const AlbumCard = ({ album, isPrivate, isUnlocked, onClick }) => (
     </div>
     <div className="p-5">
       <h3 className="text-xl font-light text-slate-800 mb-2">{album.name}</h3>
-      <p className="text-slate-600 text-sm mb-3 line-clamp-2">{album.description}</p>
+      {album.description && (
+        <p className="text-slate-600 text-sm mb-3 line-clamp-2">{album.description}</p>
+      )}
       <div className="flex justify-between items-center text-sm text-slate-500">
-        <span className="flex items-center gap-1">
-          <Calendar className="w-4 h-4" />
-          {new Date(album.date).toLocaleDateString()}
-        </span>
+        {album.date ? (
+          <span className="flex items-center gap-1">
+            <Calendar className="w-4 h-4" />
+            {new Date(album.date).toLocaleDateString()}
+          </span>
+        ) : <span />}
         <span>{album.photoCount} photos</span>
       </div>
       {album.category && (

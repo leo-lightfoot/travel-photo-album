@@ -74,6 +74,13 @@ function generateAlbumId(folderName) {
   return folderName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
+// Only the folder name is mandatory -- every other prompt below can be left
+// blank. If the name prompt is skipped too, fall back to a readable version
+// of the folder name instead of baking an empty string into albums.json.
+function defaultAlbumName(folderName) {
+  return folderName.replace(/[-_]+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
   const metadata = loadAlbumMetadata(albumPath);
   const images = getImageFiles(albumPath);
@@ -90,12 +97,17 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
   console.log(`\n📁 Processing: ${albumFolder}`);
   console.log(`   Found ${images.length} images`);
 
-  // Interactive prompts for missing metadata
-  const name = metadata.name || await question(`   Album name: `);
-  const description = metadata.description || await question(`   Description: `);
-  const category = metadata.category || await question(`   Category (e.g., Weddings, Family, Corporate): `);
-  const dateStr = metadata.date || await question(`   Date (YYYY-MM-DD): `);
-  
+  // Interactive prompts for missing metadata -- only the album name falls
+  // back to something non-blank (the folder name) if skipped. Description,
+  // category, and date are genuinely optional: if left blank they're left
+  // out of albums.json entirely rather than stored as "", so the frontend
+  // never has to render an empty field or an "Invalid Date".
+  const nameAnswer = (metadata.name || await question(`   Album name (blank = "${defaultAlbumName(albumFolder)}"): `)).trim();
+  const name = nameAnswer || defaultAlbumName(albumFolder);
+  const description = (metadata.description || await question(`   Description (optional): `)).trim();
+  const category = (metadata.category || await question(`   Category (optional, e.g., Weddings, Family, Corporate): `)).trim();
+  const dateStr = (metadata.date || await question(`   Date (optional, YYYY-MM-DD): `)).trim();
+
   let secretCode = null;
   if (isPrivate) {
     secretCode = metadata.secretCode || await question(`   Secret code (for private access): `);
@@ -107,7 +119,7 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
     return {
       url: `${CONFIG.r2BaseUrl}/${r2BasePath}/${albumFolder}/${img}`,
       caption: metadata.captions?.[img] || `Photo ${idx + 1}`,
-      date: dateStr,
+      ...(dateStr && { date: dateStr }),
       ...(featuredPhotos.includes(img) && { featured: true })
     };
   });
@@ -115,12 +127,12 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
   const album = {
     id: generateAlbumId(albumFolder),
     name,
-    description,
     coverImage: coverUrl,
-    date: dateStr,
-    category,
     photoCount: images.length,
-    photos
+    photos,
+    ...(description && { description }),
+    ...(dateStr && { date: dateStr }),
+    ...(category && { category })
   };
 
   if (isPrivate) {

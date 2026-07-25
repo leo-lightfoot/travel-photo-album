@@ -55,14 +55,16 @@ const AlbumDetailPage = () => {
     <div>
       <div className="mb-8">
         <h2 className="text-3xl font-light text-slate-800 mb-2">{album.name}</h2>
-        <p className="text-slate-600 mb-4">{album.description}</p>
+        {album.description && <p className="text-slate-600 mb-4">{album.description}</p>}
         <div className="flex gap-4 text-sm text-slate-500">
-          <span className="flex items-center gap-1">
-            <Calendar className="w-4 h-4" />
-            {new Date(album.date).toLocaleDateString()}
-          </span>
+          {album.date && (
+            <span className="flex items-center gap-1">
+              <Calendar className="w-4 h-4" />
+              {new Date(album.date).toLocaleDateString()}
+            </span>
+          )}
           <span>{album.photoCount} photos</span>
-          {album.tags && (
+          {album.tags && album.tags.length > 0 && (
             <span className="flex items-center gap-1">
               <Tag className="w-4 h-4" />
               {album.tags.join(', ')}

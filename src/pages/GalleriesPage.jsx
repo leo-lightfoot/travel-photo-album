@@ -29,8 +29,8 @@ const GalleriesPage = () => {
     }
 
     filtered.sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.date) - new Date(a.date);
-      if (sortBy === 'oldest') return new Date(a.date) - new Date(b.date);
+      if (sortBy === 'newest') return new Date(b.date || 0) - new Date(a.date || 0);
+      if (sortBy === 'oldest') return new Date(a.date || 0) - new Date(b.date || 0);
       return a.name.localeCompare(b.name);
     });
 

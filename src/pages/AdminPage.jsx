@@ -1,24 +1,27 @@
 import React, { useEffect, useState } from 'react';
+import { useAlbums } from '../hooks/useAlbums';
 
 // No client-side auth check here on purpose -- this route (and /api/admin/*)
 // is protected at the edge by Cloudflare Access on the deployed domain. In
 // local dev there's no Access in front of it, so this page is reachable
 // unauthenticated on localhost; that's expected, not a bug.
 const AdminPage = () => {
+  const { albums: contextAlbums, loadState } = useAlbums();
   const [albums, setAlbums] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [status, setStatus] = useState({});
   const [tagsDraft, setTagsDraft] = useState({});
 
+  // Seeded once from the AlbumsProvider context (already fetched at the app
+  // root) rather than a second independent fetch -- editable form state
+  // still needs its own copy so in-progress edits don't leak into the
+  // shared context other pages read from.
   useEffect(() => {
-    fetch('/api/albums')
-      .then((res) => res.json())
-      .then((data) => {
-        const all = [...data.public, ...data.private];
-        setAlbums(all);
-        setSelectedId(all[0]?.id ?? null);
-      });
-  }, []);
+    if (loadState === 'ready') {
+      setAlbums([...contextAlbums.public, ...contextAlbums.private]);
+      setSelectedId((prev) => prev ?? (contextAlbums.public[0]?.id || contextAlbums.private[0]?.id) ?? null);
+    }
+  }, [loadState, contextAlbums]);
 
   const updateAlbumField = (albumId, field, value) => {
     setAlbums((prev) => prev.map((a) => (a.id === albumId ? { ...a, [field]: value } : a)));

@@ -2,12 +2,13 @@
   "name": "photo-gallery",
   "version": "1.0.0",
   "type": "module",
-  "description": "Photo gallery hosted on Cloudflare Pages with R2 storage",
+  "description": "Photo gallery -- React/Vite frontend and Cloudflare Worker backend, R2 storage, D1-backed album metadata",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "npm run build && vite preview",
     "generate": "node generate-albums.cjs",
+    "prune": "node generate-albums.cjs --prune",
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {

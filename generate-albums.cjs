@@ -28,6 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const readline = require('readline');
 const sharp = require('sharp');
 const { execFileSync } = require('child_process');
 
@@ -169,6 +170,7 @@ function sqlString(value) {
 // credentials needed). --local targets the dev-only D1 emulation instead of
 // production, for testing this script/the admin page without touching real data.
 const D1_TARGET_FLAG = process.argv.includes('--local') ? '--local' : '--remote';
+const PRUNE_MODE = process.argv.includes('--prune');
 function runD1Batch(sql) {
   const tmpFile = path.join(os.tmpdir(), `d1-batch-${Date.now()}-${Math.random().toString(36).slice(2)}.sql`);
   fs.writeFileSync(tmpFile, sql, 'utf8');
@@ -214,6 +216,110 @@ ON CONFLICT(url) DO UPDATE SET
 `;
 }
 
+function buildDeletePhotoSql(url) {
+  return `DELETE FROM photos WHERE url = ${sqlString(url)};\n`;
+}
+
+function buildDeleteAlbumSql(id) {
+  return `DELETE FROM photos WHERE album_id = ${sqlString(id)};\nDELETE FROM albums WHERE id = ${sqlString(id)};\n`;
+}
+
+// Runs read-only SQL and returns parsed results (one array entry per
+// statement, each with a `.results` array) -- unlike runD1Batch, this
+// captures stdout instead of inheriting it, since we need the data back.
+// Goes through a temp --file like runD1Batch does, rather than --command:
+// a multi-statement string passed as a single --command argument doesn't
+// survive Windows' shell:true argument handling intact (it gets split on
+// whitespace before wrangler ever sees it).
+function queryD1(sql) {
+  const tmpFile = path.join(os.tmpdir(), `d1-query-${Date.now()}-${Math.random().toString(36).slice(2)}.sql`);
+  fs.writeFileSync(tmpFile, sql, 'utf8');
+  try {
+    const out = execFileSync(NPX_CMD, [
+      'wrangler', 'd1', 'execute', CONFIG.d1DatabaseName,
+      D1_TARGET_FLAG, '--file', tmpFile, '--json'
+    ], { shell: true });
+    return JSON.parse(out.toString());
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+}
+
+function r2KeyFromUrl(url) {
+  return url.replace(`${CONFIG.r2BaseUrl}/`, '');
+}
+
+function deleteR2Object(r2Key) {
+  console.log(`   🗑️  Deleting from R2: ${r2Key}`);
+  execFileSync(NPX_CMD, [
+    'wrangler', 'r2', 'object', 'delete', `${CONFIG.r2BucketName}/${r2Key}`,
+    '--remote'
+  ], { stdio: 'inherit', shell: true });
+}
+
+function askYesNo(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => rl.question(question, (answer) => {
+    rl.close();
+    resolve(answer);
+  }));
+}
+
+// Opt-in only (--prune flag) -- an album/photo no longer found locally is
+// never deleted by a plain run, since photos/ is gitignored and a fresh
+// clone with no local photos restored yet would otherwise look like
+// "everything was removed" and wipe out the whole site.
+async function pruneStaleEntries(processedAlbumIds, processedPhotoUrlsByAlbum) {
+  console.log('\n🔍 Checking for albums/photos removed locally...');
+  const [albumsResult, photosResult] = queryD1('SELECT id FROM albums; SELECT url, album_id FROM photos;');
+  const existingAlbumIds = albumsResult.results.map((r) => r.id);
+  const existingPhotos = photosResult.results;
+
+  if (processedAlbumIds.size === 0 && existingAlbumIds.length > 0) {
+    console.error(`❌ Refusing to prune: no albums were found under ${CONFIG.photosDir}, but ${existingAlbumIds.length} exist in the database. This looks like photos/ is missing or empty rather than intentional -- restore your local photos/ folder before pruning.`);
+    return;
+  }
+
+  const albumsToDelete = existingAlbumIds.filter((id) => !processedAlbumIds.has(id));
+  const photosToDelete = existingPhotos.filter((p) =>
+    !albumsToDelete.includes(p.album_id) &&
+    processedAlbumIds.has(p.album_id) &&
+    !(processedPhotoUrlsByAlbum.get(p.album_id) || new Set()).has(p.url)
+  );
+
+  if (albumsToDelete.length === 0 && photosToDelete.length === 0) {
+    console.log('   Nothing to prune.');
+    return;
+  }
+
+  console.log('\n⚠️  The following would be PERMANENTLY deleted from R2 and the database:');
+  for (const id of albumsToDelete) {
+    const count = existingPhotos.filter((p) => p.album_id === id).length;
+    console.log(`   - Album "${id}" and its ${count} photo(s) -- folder no longer exists locally`);
+  }
+  for (const p of photosToDelete) {
+    console.log(`   - Photo in "${p.album_id}": ${p.url}`);
+  }
+
+  const answer = await askYesNo('\nType "yes" to permanently delete these, anything else to cancel: ');
+  if (answer.trim().toLowerCase() !== 'yes') {
+    console.log('Cancelled -- nothing deleted.');
+    return;
+  }
+
+  for (const p of photosToDelete) deleteR2Object(r2KeyFromUrl(p.url));
+  for (const id of albumsToDelete) {
+    for (const p of existingPhotos.filter((ep) => ep.album_id === id)) deleteR2Object(r2KeyFromUrl(p.url));
+  }
+
+  let deleteSql = '';
+  for (const p of photosToDelete) deleteSql += buildDeletePhotoSql(p.url);
+  for (const id of albumsToDelete) deleteSql += buildDeleteAlbumSql(id);
+  runD1Batch(deleteSql);
+
+  console.log(`✅ Pruned ${albumsToDelete.length} album(s) and ${photosToDelete.length} additional photo(s).`);
+}
+
 function isImageFile(filename) {
   const ext = path.extname(filename).toLowerCase();
   return CONFIG.supportedFormats.includes(ext);
@@ -251,18 +357,25 @@ function defaultAlbumName(folderName) {
   return folderName.replace(/[-_]+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// Returns { id, photoUrls } for every folder found under photos/, even when
+// the album's own DB sync is skipped -- this is what --prune trusts to
+// decide "does this album/photo still exist locally", so it must reflect
+// what's actually on disk regardless of why the sync itself didn't run.
 async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
   const metadata = loadAlbumMetadata(albumPath);
   const images = getImageFiles(albumPath);
+  const id = generateAlbumId(albumFolder);
 
   if (images.length === 0) {
     console.log(`⚠️  Skipping ${albumFolder} - no images found`);
-    return;
+    return { id, photoUrls: new Set() };
   }
+
+  const photoUrls = new Set(images.map((img) => `${CONFIG.r2BaseUrl}/${r2BasePath}/${albumFolder}/${img}`));
 
   if (isPrivate && !metadata.secretCode) {
     console.log(`⚠️  Skipping ${albumFolder} - private album needs a secretCode in album-info.json`);
-    return;
+    return { id, photoUrls };
   }
 
   const coverImage = metadata.coverImage || images[0];
@@ -273,7 +386,6 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
 
   await optimizeAndUploadAlbum(albumPath, albumFolder, r2BasePath, images);
 
-  const id = generateAlbumId(albumFolder);
   const name = (metadata.name || defaultAlbumName(albumFolder)).trim();
   const description = (metadata.description || '').trim();
   const category = (metadata.category || '').trim();
@@ -298,6 +410,8 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
 
   console.log(`   💾 Syncing to database`);
   runD1Batch(sql);
+
+  return { id, photoUrls };
 }
 
 async function runPipeline() {
@@ -322,13 +436,18 @@ async function runPipeline() {
     process.exit(1);
   }
 
+  const processedAlbumIds = new Set();
+  const processedPhotoUrlsByAlbum = new Map();
+
   let publicCount = 0;
   const publicDir = path.join(CONFIG.photosDir, 'public');
   if (fs.existsSync(publicDir)) {
     const folders = fs.readdirSync(publicDir).filter(f => fs.statSync(path.join(publicDir, f)).isDirectory());
     console.log(`\n📂 Found ${folders.length} public album(s)\n`);
     for (const folder of folders) {
-      await processAlbum(path.join(publicDir, folder), folder, false, 'public');
+      const result = await processAlbum(path.join(publicDir, folder), folder, false, 'public');
+      processedAlbumIds.add(result.id);
+      processedPhotoUrlsByAlbum.set(result.id, result.photoUrls);
       publicCount++;
     }
   }
@@ -339,16 +458,24 @@ async function runPipeline() {
     const folders = fs.readdirSync(privateDir).filter(f => fs.statSync(path.join(privateDir, f)).isDirectory());
     console.log(`\n🔒 Found ${folders.length} private album(s)\n`);
     for (const folder of folders) {
-      await processAlbum(path.join(privateDir, folder), folder, true, 'private');
+      const result = await processAlbum(path.join(privateDir, folder), folder, true, 'private');
+      processedAlbumIds.add(result.id);
+      processedPhotoUrlsByAlbum.set(result.id, result.photoUrls);
       privateCount++;
     }
   }
 
   console.log('\n' + '='.repeat(50));
   console.log(`✅ Done -- ${publicCount} public, ${privateCount} private album folder(s) processed`);
-  console.log('\nNext steps:');
-  console.log('  1. Visit /admin to fill in descriptions, categories, and captions');
-  console.log('  2. New albums/photos start blank -- nothing to commit, D1 is live immediately');
+
+  if (PRUNE_MODE) {
+    await pruneStaleEntries(processedAlbumIds, processedPhotoUrlsByAlbum);
+  } else {
+    console.log('\nNext steps:');
+    console.log('  1. Visit /admin to fill in descriptions, categories, and captions');
+    console.log('  2. New albums/photos start blank -- nothing to commit, D1 is live immediately');
+    console.log('  (Removed a photo or album locally? Re-run with --prune to remove it from R2/the database too.)');
+  }
 }
 
 // Example album-info.json structure
@@ -374,10 +501,13 @@ function printExampleMetadata() {
 // Run
 if (require.main === module) {
   if (process.argv.includes('--help')) {
-    console.log('Usage: node generate-albums.cjs');
+    console.log('Usage: node generate-albums.cjs [options]');
     console.log('\nOptions:');
     console.log('  --help     Show this help message');
     console.log('  --example  Show example album-info.json structure');
+    console.log('  --prune    Also remove albums/photos from R2 + the database that no');
+    console.log('             longer exist under photos/ (asks for confirmation first)');
+    console.log('  --local    Target the local D1/dev environment instead of production');
     process.exit(0);
   }
 

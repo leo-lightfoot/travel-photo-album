@@ -10,10 +10,14 @@ email before viewing galleries; private albums have an additional passcode.
 ## Quick Commands
 - `npm install` - Install dependencies
 - `npm run dev` - Start dev server (frontend + Worker backend together)
-- `npm run generate` - Generate `public/albums.json` from the `photos/` folder
+- `npm run generate` - Resize/upload new photos in `photos/` to R2 and sync album/photo metadata to D1
+- `npm run prune` - Remove albums/photos from R2 + D1 that no longer exist in `photos/` (asks for confirmation)
 - `npm run build` - Build for production (`dist/`)
 - `npm run preview` - Build, then preview the production build locally
 - `npm run deploy` - Build, then deploy to Cloudflare
+
+Album descriptions, categories, captions, and tags are edited on the live
+`/admin` page (Cloudflare Access-protected), not in a JSON file.
 
 ## R2 Bucket URL
 

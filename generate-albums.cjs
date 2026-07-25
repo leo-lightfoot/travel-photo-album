@@ -25,14 +25,113 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const sharp = require('sharp');
+const { execFileSync } = require('child_process');
 
 // Configuration
 const CONFIG = {
   photosDir: './photos',
   outputFile: './public/albums.json',
   r2BaseUrl: 'https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev', // UPDATE THIS with your R2 public URL
-  supportedFormats: ['.jpg', '.jpeg', '.png', '.webp']
+  supportedFormats: ['.jpg', '.jpeg', '.png', '.webp'],
+  r2BucketName: 'photo-gallery',
+  maxDimension: 2000,
+  sizeThresholdBytes: 1.5 * 1024 * 1024, // only resize/recompress above this
+  jpegQuality: 82
 };
+
+const UPLOAD_MANIFEST_PATH = path.join(__dirname, '.r2-upload-manifest.json');
+const NPX_CMD = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+function loadUploadManifest() {
+  try {
+    return JSON.parse(fs.readFileSync(UPLOAD_MANIFEST_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveUploadManifest(manifest) {
+  fs.writeFileSync(UPLOAD_MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+}
+
+const uploadManifest = loadUploadManifest();
+
+// Resizes/recompresses in place (overwrites the file in photos/) only when
+// it's actually oversized -- an already-small image is left untouched so
+// re-running this doesn't re-encode it every time. Writes to a .tmp file
+// first and renames over the original, since sharp can't read and write
+// the same path in one pipeline.
+async function optimizeImageInPlace(filePath) {
+  const stat = fs.statSync(filePath);
+  const meta = await sharp(filePath).metadata();
+  const longestEdge = Math.max(meta.width || 0, meta.height || 0);
+  const needsResize = longestEdge > CONFIG.maxDimension;
+  const needsCompress = stat.size > CONFIG.sizeThresholdBytes;
+  if (!needsResize && !needsCompress) return false;
+
+  const ext = path.extname(filePath).toLowerCase();
+  let pipeline = sharp(filePath).rotate(); // bake in EXIF orientation before resizing
+  if (needsResize) {
+    pipeline = pipeline.resize({
+      width: CONFIG.maxDimension,
+      height: CONFIG.maxDimension,
+      fit: 'inside',
+      withoutEnlargement: true
+    });
+  }
+  if (ext === '.png') {
+    pipeline = pipeline.png({ quality: CONFIG.jpegQuality });
+  } else if (ext === '.webp') {
+    pipeline = pipeline.webp({ quality: CONFIG.jpegQuality });
+  } else {
+    pipeline = pipeline.jpeg({ quality: CONFIG.jpegQuality, mozjpeg: true });
+  }
+
+  const tmpPath = `${filePath}.tmp`;
+  await pipeline.toFile(tmpPath);
+  fs.renameSync(tmpPath, filePath);
+  return true;
+}
+
+function contentTypeFor(ext) {
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  return 'application/octet-stream';
+}
+
+// Uploads straight to R2 via the wrangler CLI (already authenticated for
+// deploy -- no separate R2 API credentials needed). Skips files whose
+// size+mtime fingerprint hasn't changed since the last successful upload,
+// so re-running this after adding one new album doesn't re-upload every
+// album that's already live.
+function uploadIfChanged(localPath, r2Key) {
+  const stat = fs.statSync(localPath);
+  const fingerprint = `${stat.size}-${Math.round(stat.mtimeMs)}`;
+  if (uploadManifest[r2Key] === fingerprint) return false;
+
+  console.log(`   ⬆️  Uploading ${r2Key}`);
+  execFileSync(NPX_CMD, [
+    'wrangler', 'r2', 'object', 'put', `${CONFIG.r2BucketName}/${r2Key}`,
+    '--file', localPath,
+    '--remote',
+    '--content-type', contentTypeFor(path.extname(localPath).toLowerCase())
+  ], { stdio: 'inherit', shell: true });
+
+  uploadManifest[r2Key] = fingerprint;
+  saveUploadManifest(uploadManifest); // persist immediately so a later failure doesn't lose this
+  return true;
+}
+
+async function optimizeAndUploadAlbum(albumPath, albumFolder, r2BasePath, images) {
+  for (const img of images) {
+    const localPath = path.join(albumPath, img);
+    const resized = await optimizeImageInPlace(localPath);
+    if (resized) console.log(`   🗜️  Resized/compressed ${img}`);
+    uploadIfChanged(localPath, `${r2BasePath}/${albumFolder}/${img}`);
+  }
+}
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -96,6 +195,8 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
 
   console.log(`\n📁 Processing: ${albumFolder}`);
   console.log(`   Found ${images.length} images`);
+
+  await optimizeAndUploadAlbum(albumPath, albumFolder, r2BasePath, images);
 
   // Interactive prompts for missing metadata -- only the album name falls
   // back to something non-blank (the folder name) if skipped. Description,
@@ -224,9 +325,8 @@ async function generateAlbumsJson() {
   console.log(`   Total photos: ${result.public.reduce((sum, a) => sum + a.photoCount, 0) + result.private.reduce((sum, a) => sum + a.photoCount, 0)}`);
   console.log('\nNext steps:');
   console.log('  1. Review albums.json');
-  console.log('  2. Upload photos to R2 (same folder structure)');
-  console.log('  3. Deploy site: npm run build');
-  
+  console.log('  2. Commit + push (photos are already uploaded to R2)');
+
   rl.close();
 }
 

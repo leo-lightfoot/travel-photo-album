@@ -14,3 +14,6 @@ Thumbs.db
 .wrangler/
 .dev.vars
 .dev.vars.*
+
+# generate-albums.cjs upload state
+.r2-upload-manifest.json

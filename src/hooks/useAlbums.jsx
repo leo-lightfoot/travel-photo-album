@@ -7,7 +7,7 @@ export const AlbumsProvider = ({ children }) => {
   const [loadState, setLoadState] = useState('loading'); // 'loading' | 'ready' | 'error'
 
   useEffect(() => {
-    fetch('/albums.json')
+    fetch('/api/albums')
       .then(res => {
         if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
         return res.json();

@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * Album JSON Generator
- * Scans a local folder structure and generates albums.json for your photo gallery
- * 
+ * Album pipeline: resizes/uploads photos to R2, then upserts album + photo
+ * rows into D1. Descriptions, categories, and per-photo captions are edited
+ * afterward on the live site's /admin page (Cloudflare Access-protected) --
+ * this script only ever *seeds* those fields on first insert and never
+ * overwrites them again, so admin edits survive re-running this.
+ *
  * Usage:
- * node generate-albums.js
- * 
+ * node generate-albums.cjs
+ *
  * Expected folder structure:
  * photos/
  *   public/
@@ -24,17 +27,17 @@
 
 const fs = require('fs');
 const path = require('path');
-const readline = require('readline');
+const os = require('os');
 const sharp = require('sharp');
 const { execFileSync } = require('child_process');
 
 // Configuration
 const CONFIG = {
   photosDir: './photos',
-  outputFile: './public/albums.json',
   r2BaseUrl: 'https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev', // UPDATE THIS with your R2 public URL
   supportedFormats: ['.jpg', '.jpeg', '.png', '.webp'],
   r2BucketName: 'photo-gallery',
+  d1DatabaseName: 'subscribers-db',
   maxDimension: 2000,
   sizeThresholdBytes: 1.5 * 1024 * 1024, // only resize/recompress above this
   jpegQuality: 82
@@ -153,13 +156,62 @@ async function optimizeAndUploadAlbum(albumPath, albumFolder, r2BasePath, images
   }
 }
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
+function sqlEscape(value) {
+  return String(value).replace(/'/g, "''");
+}
 
-function question(query) {
-  return new Promise(resolve => rl.question(query, resolve));
+function sqlString(value) {
+  return `'${sqlEscape(value)}'`;
+}
+
+// Runs a batch of SQL statements against D1 via the wrangler CLI (same
+// already-authenticated pattern as the R2 uploads above -- no separate DB
+// credentials needed). --local targets the dev-only D1 emulation instead of
+// production, for testing this script/the admin page without touching real data.
+const D1_TARGET_FLAG = process.argv.includes('--local') ? '--local' : '--remote';
+function runD1Batch(sql) {
+  const tmpFile = path.join(os.tmpdir(), `d1-batch-${Date.now()}-${Math.random().toString(36).slice(2)}.sql`);
+  fs.writeFileSync(tmpFile, sql, 'utf8');
+  try {
+    execFileSync(NPX_CMD, [
+      'wrangler', 'd1', 'execute', CONFIG.d1DatabaseName,
+      D1_TARGET_FLAG, '--file', tmpFile
+    ], { stdio: 'inherit', shell: true });
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+}
+
+// name/date/is_private/secret_code/tags/cover_image are owned by
+// album-info.json and refreshed every run. description/category are seeded
+// here only on first insert -- once an album exists, the admin page (D1) owns
+// those two fields, so re-running this must never clobber an edit made there.
+function buildAlbumUpsertSql({ id, name, description, category, dateStr, isPrivate, secretCode, tags, coverUrl }) {
+  const secretCodeSql = secretCode ? sqlString(secretCode) : 'NULL';
+  return `
+INSERT INTO albums (id, name, description, category, date, is_private, secret_code, tags, cover_image, created_at)
+VALUES (${sqlString(id)}, ${sqlString(name)}, ${sqlString(description)}, ${sqlString(category)}, ${sqlString(dateStr)}, ${isPrivate ? 1 : 0}, ${secretCodeSql}, ${sqlString(JSON.stringify(tags))}, ${sqlString(coverUrl)}, ${sqlString(new Date().toISOString())})
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  date = excluded.date,
+  is_private = excluded.is_private,
+  secret_code = excluded.secret_code,
+  tags = excluded.tags,
+  cover_image = excluded.cover_image;
+`;
+}
+
+// caption/featured are admin-owned (edited on /admin) and never touched
+// again after a photo's first insert -- only sort_order/album_id refresh,
+// in case the local file listing order or album placement changes.
+function buildPhotoUpsertSql({ url, albumId, caption, featured, sortOrder }) {
+  return `
+INSERT INTO photos (url, album_id, caption, date, featured, sort_order)
+VALUES (${sqlString(url)}, ${sqlString(albumId)}, ${sqlString(caption)}, '', ${featured ? 1 : 0}, ${sortOrder})
+ON CONFLICT(url) DO UPDATE SET
+  album_id = excluded.album_id,
+  sort_order = excluded.sort_order;
+`;
 }
 
 function isImageFile(filename) {
@@ -193,9 +245,8 @@ function generateAlbumId(folderName) {
   return folderName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-// Only the folder name is mandatory -- every other prompt below can be left
-// blank. If the name prompt is skipped too, fall back to a readable version
-// of the folder name instead of baking an empty string into albums.json.
+// The folder name is the only mandatory input -- if album-info.json doesn't
+// supply a name, fall back to a readable version of the folder name.
 function defaultAlbumName(folderName) {
   return folderName.replace(/[-_]+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -203,13 +254,17 @@ function defaultAlbumName(folderName) {
 async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
   const metadata = loadAlbumMetadata(albumPath);
   const images = getImageFiles(albumPath);
-  
+
   if (images.length === 0) {
     console.log(`⚠️  Skipping ${albumFolder} - no images found`);
-    return null;
+    return;
   }
 
-  // Find cover image
+  if (isPrivate && !metadata.secretCode) {
+    console.log(`⚠️  Skipping ${albumFolder} - private album needs a secretCode in album-info.json`);
+    return;
+  }
+
   const coverImage = metadata.coverImage || images[0];
   const coverUrl = `${CONFIG.r2BaseUrl}/${r2BasePath}/${albumFolder}/${coverImage}`;
 
@@ -218,57 +273,37 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
 
   await optimizeAndUploadAlbum(albumPath, albumFolder, r2BasePath, images);
 
-  // Interactive prompts for missing metadata -- only the album name falls
-  // back to something non-blank (the folder name) if skipped. Description,
-  // category, and date are genuinely optional: if left blank they're left
-  // out of albums.json entirely rather than stored as "", so the frontend
-  // never has to render an empty field or an "Invalid Date".
-  const nameAnswer = (metadata.name || await question(`   Album name (blank = "${defaultAlbumName(albumFolder)}"): `)).trim();
-  const name = nameAnswer || defaultAlbumName(albumFolder);
-  const description = (metadata.description || await question(`   Description (optional): `)).trim();
-  const category = (metadata.category || await question(`   Category (optional, e.g., Weddings, Family, Corporate): `)).trim();
-  const dateStr = (metadata.date || await question(`   Date (optional, YYYY-MM-DD): `)).trim();
+  const id = generateAlbumId(albumFolder);
+  const name = (metadata.name || defaultAlbumName(albumFolder)).trim();
+  const description = (metadata.description || '').trim();
+  const category = (metadata.category || '').trim();
+  const dateStr = (metadata.date || '').trim();
+  const tags = isPrivate ? (metadata.tags || []) : [];
 
-  let secretCode = null;
-  if (isPrivate) {
-    secretCode = metadata.secretCode || await question(`   Secret code (for private access): `);
-  }
-
-  // Generate photo entries
-  const featuredPhotos = metadata.featuredPhotos || [];
-  const photos = images.map((img, idx) => {
-    return {
-      url: `${CONFIG.r2BaseUrl}/${r2BasePath}/${albumFolder}/${img}`,
-      caption: metadata.captions?.[img] || `Photo ${idx + 1}`,
-      ...(dateStr && { date: dateStr }),
-      ...(featuredPhotos.includes(img) && { featured: true })
-    };
+  let sql = buildAlbumUpsertSql({
+    id, name, description, category, dateStr,
+    isPrivate, secretCode: isPrivate ? metadata.secretCode : null, tags, coverUrl
   });
 
-  const album = {
-    id: generateAlbumId(albumFolder),
-    name,
-    coverImage: coverUrl,
-    photoCount: images.length,
-    photos,
-    ...(description && { description }),
-    ...(dateStr && { date: dateStr }),
-    ...(category && { category })
-  };
+  const featuredPhotos = metadata.featuredPhotos || [];
+  images.forEach((img, idx) => {
+    sql += buildPhotoUpsertSql({
+      url: `${CONFIG.r2BaseUrl}/${r2BasePath}/${albumFolder}/${img}`,
+      albumId: id,
+      caption: metadata.captions?.[img] || `Photo ${idx + 1}`,
+      featured: featuredPhotos.includes(img),
+      sortOrder: idx
+    });
+  });
 
-  if (isPrivate) {
-    album.secretCode = secretCode;
-    album.tags = metadata.tags || [];
-  }
-
-  return album;
+  console.log(`   💾 Syncing to database`);
+  runD1Batch(sql);
 }
 
-async function generateAlbumsJson() {
-  console.log('🎨 Photo Gallery - Album JSON Generator\n');
-  console.log('=' .repeat(50));
+async function runPipeline() {
+  console.log('🎨 Photo Gallery - Album Pipeline\n');
+  console.log('='.repeat(50));
 
-  // Check if photos directory exists
   if (!fs.existsSync(CONFIG.photosDir)) {
     console.error(`❌ Photos directory not found: ${CONFIG.photosDir}`);
     console.log('\nExpected structure:');
@@ -282,89 +317,53 @@ async function generateAlbumsJson() {
     process.exit(1);
   }
 
-  // Check R2 URL
   if (CONFIG.r2BaseUrl.includes('xxxxx')) {
-    console.log('\n⚠️  Warning: Please update R2_BASE_URL in this script!');
-    const url = await question('Enter your R2 public URL: ');
-    CONFIG.r2BaseUrl = url.trim();
+    console.error('❌ Set CONFIG.r2BaseUrl in generate-albums.cjs before running.');
+    process.exit(1);
   }
 
-  const result = {
-    public: [],
-    private: []
-  };
-
-  // Process public albums
+  let publicCount = 0;
   const publicDir = path.join(CONFIG.photosDir, 'public');
   if (fs.existsSync(publicDir)) {
-    const folders = fs.readdirSync(publicDir).filter(f => {
-      return fs.statSync(path.join(publicDir, f)).isDirectory();
-    });
-
+    const folders = fs.readdirSync(publicDir).filter(f => fs.statSync(path.join(publicDir, f)).isDirectory());
     console.log(`\n📂 Found ${folders.length} public album(s)\n`);
-    
     for (const folder of folders) {
-      const albumPath = path.join(publicDir, folder);
-      const album = await processAlbum(albumPath, folder, false, 'public');
-      if (album) result.public.push(album);
+      await processAlbum(path.join(publicDir, folder), folder, false, 'public');
+      publicCount++;
     }
   }
 
-  // Process private albums
+  let privateCount = 0;
   const privateDir = path.join(CONFIG.photosDir, 'private');
   if (fs.existsSync(privateDir)) {
-    const folders = fs.readdirSync(privateDir).filter(f => {
-      return fs.statSync(path.join(privateDir, f)).isDirectory();
-    });
-
+    const folders = fs.readdirSync(privateDir).filter(f => fs.statSync(path.join(privateDir, f)).isDirectory());
     console.log(`\n🔒 Found ${folders.length} private album(s)\n`);
-    
     for (const folder of folders) {
-      const albumPath = path.join(privateDir, folder);
-      const album = await processAlbum(albumPath, folder, true, 'private');
-      if (album) result.private.push(album);
+      await processAlbum(path.join(privateDir, folder), folder, true, 'private');
+      privateCount++;
     }
   }
 
-  // Save albums.json
-  const outputDir = path.dirname(CONFIG.outputFile);
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-
-  fs.writeFileSync(
-    CONFIG.outputFile,
-    JSON.stringify(result, null, 2),
-    'utf8'
-  );
-
   console.log('\n' + '='.repeat(50));
-  console.log(`✅ Generated: ${CONFIG.outputFile}`);
-  console.log(`   Public albums: ${result.public.length}`);
-  console.log(`   Private albums: ${result.private.length}`);
-  console.log(`   Total photos: ${result.public.reduce((sum, a) => sum + a.photoCount, 0) + result.private.reduce((sum, a) => sum + a.photoCount, 0)}`);
+  console.log(`✅ Done -- ${publicCount} public, ${privateCount} private album folder(s) processed`);
   console.log('\nNext steps:');
-  console.log('  1. Review albums.json');
-  console.log('  2. Commit + push (photos are already uploaded to R2)');
-
-  rl.close();
+  console.log('  1. Visit /admin to fill in descriptions, categories, and captions');
+  console.log('  2. New albums/photos start blank -- nothing to commit, D1 is live immediately');
 }
 
 // Example album-info.json structure
 function printExampleMetadata() {
   const example = {
-    name: "Sarah & John Wedding",
-    description: "A beautiful celebration of love in Tuscany",
-    category: "Weddings",
-    date: "2024-06-15",
-    coverImage: "IMG_001.jpg",
-    tags: ["wedding", "tuscany", "summer"],
-    secretCode: "WEDDING2024",
-    featuredPhotos: ["IMG_001.jpg"],
+    name: 'Sarah & John Wedding',
+    description: 'A beautiful celebration of love in Tuscany (optional -- can also be set later on /admin)',
+    category: 'Weddings',
+    date: '2024-06-15',
+    coverImage: 'IMG_001.jpg',
+    tags: ['wedding', 'tuscany', 'summer'],
+    secretCode: 'WEDDING2024',
+    featuredPhotos: ['IMG_001.jpg'],
     captions: {
-      "IMG_001.jpg": "The ceremony",
-      "IMG_002.jpg": "First dance",
-      "IMG_003.jpg": "Cake cutting"
+      'IMG_001.jpg': 'The ceremony (optional -- can also be set later on /admin)'
     }
   };
 
@@ -375,7 +374,7 @@ function printExampleMetadata() {
 // Run
 if (require.main === module) {
   if (process.argv.includes('--help')) {
-    console.log('Usage: node generate-albums.js');
+    console.log('Usage: node generate-albums.cjs');
     console.log('\nOptions:');
     console.log('  --help     Show this help message');
     console.log('  --example  Show example album-info.json structure');
@@ -387,9 +386,8 @@ if (require.main === module) {
     process.exit(0);
   }
 
-  generateAlbumsJson().catch(err => {
+  runPipeline().catch(err => {
     console.error('Error:', err);
-    rl.close();
     process.exit(1);
   });
 }

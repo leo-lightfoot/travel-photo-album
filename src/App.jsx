@@ -5,6 +5,7 @@ import { UnlockedAlbumsProvider } from './hooks/useUnlockedAlbums';
 import LandingPage from './pages/LandingPage';
 import GalleriesPage from './pages/GalleriesPage';
 import AlbumDetailPage from './pages/AlbumDetailPage';
+import AdminPage from './pages/AdminPage';
 import GalleryLayout from './components/gallery/GalleryLayout';
 import RequireVerifiedVisitor from './components/gate/RequireVerifiedVisitor';
 
@@ -14,6 +15,8 @@ const App = () => (
       <UnlockedAlbumsProvider>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          {/* Protected by Cloudflare Access at the edge, not by app code */}
+          <Route path="/admin" element={<AdminPage />} />
           <Route
             element={
               <RequireVerifiedVisitor>

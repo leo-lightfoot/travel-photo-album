@@ -27,6 +27,9 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  // Disabled so the *.workers.dev URL can't be used to bypass Cloudflare
+  // Access, which only protects /admin and /api/admin/* on the custom domain.
+  "workers_dev": false,
   "vars": {
     "FROM_EMAIL": "verify@send.abdulmalik.de"
   },

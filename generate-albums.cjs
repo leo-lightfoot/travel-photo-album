@@ -201,13 +201,13 @@ ON CONFLICT(id) DO UPDATE SET
 `;
 }
 
-// caption/featured are admin-owned (edited on /admin) and never touched
-// again after a photo's first insert -- only sort_order/album_id refresh,
-// in case the local file listing order or album placement changes.
+// caption/featured/tags are admin-owned (edited on /admin) and never
+// touched again after a photo's first insert -- only sort_order/album_id
+// refresh, in case the local file listing order or album placement changes.
 function buildPhotoUpsertSql({ url, albumId, caption, featured, sortOrder }) {
   return `
-INSERT INTO photos (url, album_id, caption, date, featured, sort_order)
-VALUES (${sqlString(url)}, ${sqlString(albumId)}, ${sqlString(caption)}, '', ${featured ? 1 : 0}, ${sortOrder})
+INSERT INTO photos (url, album_id, caption, date, featured, tags, sort_order)
+VALUES (${sqlString(url)}, ${sqlString(albumId)}, ${sqlString(caption)}, '', ${featured ? 1 : 0}, '[]', ${sortOrder})
 ON CONFLICT(url) DO UPDATE SET
   album_id = excluded.album_id,
   sort_order = excluded.sort_order;

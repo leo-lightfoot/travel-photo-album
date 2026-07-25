@@ -7,6 +7,7 @@ function rowToAlbum(row, photos) {
     photos: photos.map((p) => ({
       url: p.url,
       caption: p.caption,
+      tags: JSON.parse(p.tags || '[]'),
       ...(p.date && { date: p.date }),
       ...(p.featured ? { featured: true } : {})
     }))
@@ -48,9 +49,9 @@ export async function updateAlbum(db, id, { description, category }) {
   return meta.changes > 0;
 }
 
-export async function updatePhoto(db, url, { caption, featured }) {
+export async function updatePhoto(db, url, { caption, featured, tags }) {
   const { meta } = await db.prepare(
-    'UPDATE photos SET caption = ?1, featured = ?2 WHERE url = ?3'
-  ).bind(caption ?? '', featured ? 1 : 0, url).run();
+    'UPDATE photos SET caption = ?1, featured = ?2, tags = ?3 WHERE url = ?4'
+  ).bind(caption ?? '', featured ? 1 : 0, JSON.stringify(tags ?? []), url).run();
   return meta.changes > 0;
 }

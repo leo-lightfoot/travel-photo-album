@@ -24,9 +24,12 @@ export async function handleUpdatePhoto(request, env) {
   const url = typeof body?.url === 'string' ? body.url : '';
   const caption = typeof body?.caption === 'string' ? body.caption.trim() : '';
   const featured = Boolean(body?.featured);
+  const tags = Array.isArray(body?.tags)
+    ? body.tags.filter((t) => typeof t === 'string').map((t) => t.trim()).filter(Boolean)
+    : [];
   if (!url) return jsonResponse({ error: 'url is required' }, 400);
 
-  const updated = await updatePhoto(env.DB, url, { caption, featured });
+  const updated = await updatePhoto(env.DB, url, { caption, featured, tags });
   if (!updated) return jsonResponse({ error: 'Photo not found' }, 404);
   return jsonResponse({ ok: true });
 }

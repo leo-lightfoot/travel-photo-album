@@ -1,15 +1,39 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "travel-photo-album",
+  "main": "worker/index.js",
   "compatibility_date": "2026-07-25",
   "observability": {
     "enabled": true
   },
   "assets": {
     "directory": "dist",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS"
   },
+  "kv_namespaces": [
+    {
+      "binding": "VERIFY_CODES",
+      "id": "9b5c4b8fda9d4016854df5c2a94d114d"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "subscribers-db",
+      "database_id": "e8ca5fe2-f15d-43e8-9c10-0413fe46a9c8"
+    }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
+  ],
+  "vars": {
+    "FROM_EMAIL": "verify@send.abdulmalik.de"
+  },
+  "routes": [
+    {
+      "pattern": "photography.abdulmalik.de",
+      "custom_domain": true
+    }
   ]
 }

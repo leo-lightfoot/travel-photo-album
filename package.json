@@ -4,10 +4,11 @@
   "type": "module",
   "description": "Photo gallery hosted on Cloudflare Pages with R2 storage",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev",
     "build": "vite build",
-    "preview": "vite preview",
-    "generate": "node generate-albums.cjs"
+    "preview": "npm run build && vite preview",
+    "generate": "node generate-albums.cjs",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "lucide-react": "^0.263.1",
@@ -16,6 +17,7 @@
     "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.47.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^4.2.1",
     "tailwindcss": "^4.1.14",

@@ -1,34 +1,69 @@
 {
   "public": [
     {
+      "id": "idstein",
+      "name": "Idstein",
+      "description": "",
+      "coverImage": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/Idstein/IMG_0094.JPG",
+      "date": "",
+      "category": "Trip",
+      "photoCount": 5,
+      "photos": [
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/Idstein/IMG_0094.JPG",
+          "caption": "Photo 1",
+          "date": ""
+        },
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/Idstein/IMG_0095.JPG",
+          "caption": "Photo 2",
+          "date": ""
+        },
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/Idstein/IMG_0099.JPG",
+          "caption": "Photo 3",
+          "date": ""
+        },
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/Idstein/IMG_0103.JPG",
+          "caption": "Photo 4",
+          "date": ""
+        },
+        {
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/Idstein/IMG_0111.JPG",
+          "caption": "Photo 5",
+          "date": ""
+        }
+      ]
+    },
+    {
       "id": "test-album",
-      "name": "My test Album",
-      "description": "Testing this app",
-      "coverImage": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test1.jpg",
-      "date": "2025-10-05",
-      "category": "personal",
+      "name": "",
+      "description": "",
+      "coverImage": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album/test1.jpg",
+      "date": "",
+      "category": "",
       "photoCount": 4,
       "photos": [
         {
-          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test1.jpg",
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album/test1.jpg",
           "caption": "Photo 1",
-          "date": "2025-10-05",
-          "featured": true
+          "date": ""
         },
         {
-          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test2.jpg",
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album/test2.jpg",
           "caption": "Photo 2",
-          "date": "2025-10-05"
+          "date": ""
         },
         {
-          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test3.jpg",
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album/test3.jpg",
           "caption": "Photo 3",
-          "date": "2025-10-05"
+          "date": ""
         },
         {
-          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album-2024/test4.jpg",
+          "url": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev/public/test-album/test4.jpg",
           "caption": "Photo 4",
-          "date": "2025-10-05"
+          "date": ""
         }
       ]
     }

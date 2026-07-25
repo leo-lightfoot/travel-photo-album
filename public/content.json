@@ -1,25 +1,18 @@
 {
   "site": {
-    "photographerName": "Your Name",
-    "tagline": "Capturing moments that last a lifetime"
+    "photographerName": "LIGHT AND LORE",
+    "tagline": "",
+    "heroImage": "/hero.jpg"
   },
   "contact": {
-    "email": "you@example.com",
-    "phone": "+1 (555) 010-0000",
-    "instagram": "https://instagram.com/yourhandle",
-    "location": "Based in Your City — available for travel"
+    "email": "yknotproductionstudio@gmail.com",
+    "phone": "",
+    "instagram": "https://www.instagram.com/light_and_lore/",
+    "location": "Based in Frankfurt am Main"
   },
   "booking": {
     "headline": "Booking a Session",
     "body": "Tell visitors about your process, what's included, and how a typical session goes. This is a good place to mention turnaround time and how to get started.",
     "availabilityNote": "Currently booking for Fall 2026"
-  },
-  "testimonials": [
-    {
-      "id": "t1",
-      "name": "Client Name",
-      "quote": "Replace this with a real testimonial once you have one.",
-      "context": "Wedding, June 2026"
-    }
-  ]
+  }
 }

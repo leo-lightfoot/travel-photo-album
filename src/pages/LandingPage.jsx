@@ -5,7 +5,6 @@ import { useSiteContent } from '../hooks/useSiteContent';
 import Hero from '../components/landing/Hero';
 import FeaturedPhotos from '../components/landing/FeaturedPhotos';
 import BookingSection from '../components/landing/BookingSection';
-import TestimonialsSection from '../components/landing/TestimonialsSection';
 import ContactSection from '../components/landing/ContactSection';
 
 const LandingPage = () => {
@@ -43,11 +42,10 @@ const LandingPage = () => {
       <Hero
         photographerName={content.site?.photographerName}
         tagline={content.site?.tagline}
-        backdropPhoto={featuredPhotos[0]}
+        backdropImage={content.site?.heroImage}
       />
       <FeaturedPhotos photos={featuredPhotos} />
       <BookingSection booking={content.booking} contactEmail={content.contact?.email} />
-      <TestimonialsSection testimonials={content.testimonials} />
       <ContactSection contact={content.contact} />
     </div>
   );

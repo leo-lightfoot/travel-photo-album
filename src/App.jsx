@@ -6,6 +6,7 @@ import LandingPage from './pages/LandingPage';
 import GalleriesPage from './pages/GalleriesPage';
 import AlbumDetailPage from './pages/AlbumDetailPage';
 import GalleryLayout from './components/gallery/GalleryLayout';
+import RequireVerifiedVisitor from './components/gate/RequireVerifiedVisitor';
 
 const App = () => (
   <BrowserRouter>
@@ -13,7 +14,13 @@ const App = () => (
       <UnlockedAlbumsProvider>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route element={<GalleryLayout />}>
+          <Route
+            element={
+              <RequireVerifiedVisitor>
+                <GalleryLayout />
+              </RequireVerifiedVisitor>
+            }
+          >
             <Route path="/galleries" element={<GalleriesPage />} />
             <Route path="/galleries/:albumId" element={<AlbumDetailPage />} />
           </Route>

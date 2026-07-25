@@ -1,4 +1,5 @@
 import { handleVerifyStart, handleVerifyConfirm } from './routes/verify.js';
+import { handleSessionCheck } from './routes/session.js';
 import { jsonResponse } from './lib/http.js';
 
 async function handleApi(request, env, pathname) {
@@ -8,6 +9,10 @@ async function handleApi(request, env, pathname) {
 
   if (pathname === '/api/verify/confirm' && request.method === 'POST') {
     return handleVerifyConfirm(request, env);
+  }
+
+  if (pathname === '/api/session/check' && request.method === 'POST') {
+    return handleSessionCheck(request, env);
   }
 
   return jsonResponse({ error: 'Not found' }, 404);

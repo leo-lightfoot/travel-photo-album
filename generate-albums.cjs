@@ -57,6 +57,26 @@ function saveUploadManifest(manifest) {
 
 const uploadManifest = loadUploadManifest();
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Windows occasionally holds a brief lock on a just-written file (antivirus,
+// thumbnail generation, OneDrive/cloud sync), which makes the rename below
+// fail with EPERM even though nothing is wrong -- retrying after a short
+// wait clears it almost every time.
+async function renameWithRetry(src, dest, attempts = 5) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      fs.renameSync(src, dest);
+      return;
+    } catch (err) {
+      if (err.code !== 'EPERM' || i === attempts - 1) throw err;
+      await sleep(300 * (i + 1));
+    }
+  }
+}
+
 // Resizes/recompresses in place (overwrites the file in photos/) only when
 // it's actually oversized -- an already-small image is left untouched so
 // re-running this doesn't re-encode it every time. Writes to a .tmp file
@@ -90,7 +110,7 @@ async function optimizeImageInPlace(filePath) {
 
   const tmpPath = `${filePath}.tmp`;
   await pipeline.toFile(tmpPath);
-  fs.renameSync(tmpPath, filePath);
+  await renameWithRetry(tmpPath, filePath);
   return true;
 }
 

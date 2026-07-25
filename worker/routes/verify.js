@@ -4,6 +4,7 @@ import {
   getPendingCode,
   clearPendingCode,
   checkRateLimit,
+  recordFailedAttempt,
   normalizeEmail
 } from '../lib/kv.js';
 import { sendVerificationEmail } from '../lib/email.js';
@@ -19,6 +20,17 @@ async function readJsonBody(request) {
   } catch {
     return null;
   }
+}
+
+// Fixed-length codes, so a simple XOR-accumulate comparison is safe and
+// avoids leaking how many leading digits matched via string-compare timing.
+function codesMatch(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 export async function handleVerifyStart(request, env) {
@@ -61,8 +73,16 @@ export async function handleVerifyConfirm(request, env) {
   }
 
   const pending = await getPendingCode(env.VERIFY_CODES, email);
-  if (!pending || pending.code !== code) {
+  if (!pending) {
     return jsonResponse({ error: 'Invalid or expired code.' }, 401);
+  }
+
+  if (!codesMatch(pending.code, code)) {
+    const { locked } = await recordFailedAttempt(env.VERIFY_CODES, email, pending);
+    return jsonResponse(
+      { error: locked ? 'Too many incorrect attempts. Please request a new code.' : 'Invalid or expired code.' },
+      401
+    );
   }
 
   const normalized = normalizeEmail(email);

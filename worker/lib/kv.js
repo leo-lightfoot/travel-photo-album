@@ -1,6 +1,7 @@
 const CODE_TTL_SECONDS = 10 * 60; // 10 minutes
 const RATE_LIMIT_WINDOW_SECONDS = 60 * 60; // 1 hour
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
+const MAX_CONFIRM_ATTEMPTS = 5;
 
 export function normalizeEmail(email) {
   return email.trim().toLowerCase();
@@ -14,7 +15,7 @@ export function generateCode() {
 
 export async function storePendingCode(kv, email, code) {
   const key = `code:${normalizeEmail(email)}`;
-  await kv.put(key, JSON.stringify({ code, createdAt: Date.now() }), { expirationTtl: CODE_TTL_SECONDS });
+  await kv.put(key, JSON.stringify({ code, createdAt: Date.now(), attempts: 0 }), { expirationTtl: CODE_TTL_SECONDS });
 }
 
 export async function getPendingCode(kv, email) {
@@ -24,6 +25,22 @@ export async function getPendingCode(kv, email) {
 
 export async function clearPendingCode(kv, email) {
   await kv.delete(`code:${normalizeEmail(email)}`);
+}
+
+// A 6-digit code is only ~1M possibilities -- with no cap on confirm
+// attempts, it's brute-forceable well within its 10-minute TTL. This caps
+// guesses per issued code (separate from the per-hour send limiter above,
+// which only throttles how often new codes go out). Once exceeded, the
+// code is invalidated outright so the visitor has to request a fresh one.
+export async function recordFailedAttempt(kv, email, pending) {
+  const key = `code:${normalizeEmail(email)}`;
+  const attempts = (pending.attempts || 0) + 1;
+  if (attempts >= MAX_CONFIRM_ATTEMPTS) {
+    await kv.delete(key);
+    return { locked: true };
+  }
+  await kv.put(key, JSON.stringify({ ...pending, attempts }), { expirationTtl: CODE_TTL_SECONDS });
+  return { locked: false };
 }
 
 // Best-effort fixed-window limiter, not atomic (KV has no compare-and-swap).

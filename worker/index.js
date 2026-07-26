@@ -2,8 +2,9 @@ import { handleVerifyStart, handleVerifyConfirm } from './routes/verify.js';
 import { handleSessionCheck } from './routes/session.js';
 import { handleGetAlbums, handleGetFeatured } from './routes/albums.js';
 import { handleUnlockAlbum } from './routes/unlock.js';
-import { handleUpdateAlbum, handleUpdatePhoto } from './routes/admin.js';
+import { handleUpdateAlbum, handleUpdatePhoto, handleDeletePhoto, handleListSubscribers } from './routes/admin.js';
 import { isAdminRequest } from './lib/adminAuth.js';
+import { withSecurityHeaders } from './lib/securityHeaders.js';
 import { jsonResponse } from './lib/http.js';
 
 const ADMIN_ALBUM_ID_ROUTE = /^\/api\/admin\/albums\/([^/]+)$/;
@@ -36,7 +37,7 @@ async function handleApi(request, env, pathname) {
   }
 
   if (pathname.startsWith('/api/admin/')) {
-    if (!isAdminRequest(request)) {
+    if (!isAdminRequest(request, env)) {
       return jsonResponse({ error: 'Forbidden' }, 403);
     }
 
@@ -48,19 +49,27 @@ async function handleApi(request, env, pathname) {
     if (pathname === '/api/admin/photos' && request.method === 'PUT') {
       return handleUpdatePhoto(request, env);
     }
+
+    if (pathname === '/api/admin/photos' && request.method === 'DELETE') {
+      return handleDeletePhoto(request, env);
+    }
+
+    if (pathname === '/api/admin/subscribers' && request.method === 'GET') {
+      return handleListSubscribers(request, env);
+    }
   }
 
   return jsonResponse({ error: 'Not found' }, 404);
 }
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith('/api/')) {
-      return handleApi(request, env, url.pathname);
-    }
+    const response = url.pathname.startsWith('/api/')
+      ? await handleApi(request, env, url.pathname)
+      : await env.ASSETS.fetch(request);
 
-    return env.ASSETS.fetch(request);
+    return withSecurityHeaders(response, env);
   }
 };

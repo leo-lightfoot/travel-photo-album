@@ -24,6 +24,15 @@
       "database_id": "e8ca5fe2-f15d-43e8-9c10-0413fe46a9c8"
     }
   ],
+  // Lets the Worker delete a photo's underlying file from R2 when it's
+  // removed on the /admin page (the generate-albums.cjs pipeline uploads via
+  // the wrangler CLI and doesn't need this binding).
+  "r2_buckets": [
+    {
+      "binding": "PHOTOS_BUCKET",
+      "bucket_name": "photo-gallery"
+    }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
   ],
@@ -31,7 +40,17 @@
   // Access, which only protects /admin and /api/admin/* on the custom domain.
   "workers_dev": false,
   "vars": {
-    "FROM_EMAIL": "verify@send.abdulmalik.de"
+    "FROM_EMAIL": "verify@send.abdulmalik.de",
+    // Comma-separated allowlist of admin emails. isAdminRequest() only treats
+    // a Cloudflare Access-authenticated request as admin if its email is in
+    // this list. Fail-closed: leaving it blank denies admin to everyone, even
+    // Access-authenticated users. Must match your Access login email exactly.
+    "ADMIN_EMAILS": "abdul.malik.work@gmail.com",
+    // Public base URL of the R2 photos bucket. Used to (a) turn a stored
+    // photo URL back into its R2 object key when deleting, and (b) allow the
+    // bucket as an img-src in the Content-Security-Policy. Keep in sync with
+    // CONFIG.r2BaseUrl in generate-albums.cjs.
+    "R2_PUBLIC_BASE_URL": "https://pub-bfb0a434dd5f45b1917f3071b9e609e8.r2.dev"
   },
   "routes": [
     {

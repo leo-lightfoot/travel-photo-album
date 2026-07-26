@@ -11,6 +11,7 @@ const Hero = ({ photographerName, tagline, backdropImage, instagramDm }) => (
           alt=""
           className="absolute inset-0 w-full h-full object-cover opacity-55"
           draggable="false"
+          onContextMenu={(e) => e.preventDefault()}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/50 to-slate-900/20" />
       </>

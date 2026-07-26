@@ -13,7 +13,17 @@ import { createSessionToken } from '../lib/token.js';
 import { jsonResponse } from '../lib/http.js';
 import { timingSafeEqual } from '../lib/timingSafe.js';
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Stricter than the old /^[^\s@]+@[^\s@]+\.[^\s@]+$/ -- that allowed commas
+// and other odd characters in the local/domain parts. This sticks to the
+// characters real addresses actually use and requires a >=2-letter TLD.
+// Deliberately not trying to be RFC-5322 complete (that regex is monstrous
+// and rejecting a few exotic-but-valid addresses is an acceptable trade for
+// rejecting obvious junk).
+const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+function isValidEmail(email) {
+  return typeof email === 'string' && email.length <= 254 && EMAIL_REGEX.test(email);
+}
 
 async function readJsonBody(request) {
   try {
@@ -26,7 +36,7 @@ async function readJsonBody(request) {
 export async function handleVerifyStart(request, env) {
   const body = await readJsonBody(request);
   const email = typeof body?.email === 'string' ? body.email.trim() : '';
-  if (!EMAIL_REGEX.test(email)) {
+  if (!isValidEmail(email)) {
     return jsonResponse({ error: 'Please enter a valid email address.' }, 400);
   }
 
@@ -58,7 +68,7 @@ export async function handleVerifyConfirm(request, env) {
   const body = await readJsonBody(request);
   const email = typeof body?.email === 'string' ? body.email.trim() : '';
   const code = typeof body?.code === 'string' ? body.code.trim() : '';
-  if (!EMAIL_REGEX.test(email) || !code) {
+  if (!isValidEmail(email) || !code) {
     return jsonResponse({ error: 'Email and code are required.' }, 400);
   }
 

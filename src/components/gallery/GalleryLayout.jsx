@@ -1,12 +1,24 @@
 import React from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Loader2, AlertCircle, LogOut } from 'lucide-react';
 import { useAlbums } from '../../hooks/useAlbums';
+import { clearStoredToken } from '../../lib/sessionToken';
 
 const GalleryLayout = () => {
   const { loadState } = useAlbums();
   const location = useLocation();
+  const navigate = useNavigate();
   const isDetailView = location.pathname !== '/galleries';
+
+  // Clears the stored session token and returns to the landing page. This is
+  // a client-side sign-out only -- the token stays cryptographically valid
+  // until it expires; there's no server-side revocation list (documented
+  // limitation). Navigating home unmounts the albums/unlocked-albums
+  // providers, so their in-memory state is dropped too.
+  const handleLogout = () => {
+    clearStoredToken();
+    navigate('/', { replace: true });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -17,11 +29,20 @@ const GalleryLayout = () => {
               <h1 className="text-3xl font-light text-slate-800">Photo Gallery</h1>
               <p className="text-slate-500 text-sm mt-1">Professional Photography Collection</p>
             </div>
-            {isDetailView && (
-              <Link to="/galleries" className="px-4 py-2 text-slate-600 hover:text-slate-900 transition">
-                ← Back to Albums
-              </Link>
-            )}
+            <div className="flex items-center gap-2">
+              {isDetailView && (
+                <Link to="/galleries" className="px-4 py-2 text-slate-600 hover:text-slate-900 transition">
+                  ← Back to Albums
+                </Link>
+              )}
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-4 py-2 text-slate-600 hover:text-slate-900 transition"
+              >
+                <LogOut className="w-4 h-4" />
+                Log out
+              </button>
+            </div>
           </div>
         </div>
       </header>

@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { getStoredToken, setStoredToken, clearStoredToken } from '../../lib/sessionToken';
+import { useAlbums } from '../../hooks/useAlbums';
 import EmailGate from './EmailGate';
 
 const RequireVerifiedVisitor = ({ children }) => {
   const [status, setStatus] = useState('checking'); // 'checking' | 'verified' | 'unverified'
+  const { reload: reloadAlbums } = useAlbums();
 
   useEffect(() => {
     const token = getStoredToken();
@@ -18,14 +20,22 @@ const RequireVerifiedVisitor = ({ children }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token })
     })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.valid) {
-          setStatus('verified');
-        } else {
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          if (data.valid) {
+            setStatus('verified');
+            return;
+          }
+        } else if (res.status === 401) {
+          // Token is genuinely invalid/expired -- drop it so the gate
+          // starts clean rather than re-checking a dead token every load.
           clearStoredToken();
-          setStatus('unverified');
         }
+        // 401 (handled above), 429 (rate limited), or a 5xx: fall back to
+        // the gate but keep any token, so a real visitor who trips the
+        // rate limit isn't forced to re-verify -- a later load can succeed.
+        setStatus('unverified');
       })
       .catch(() => {
         // Network error -- don't silently let them in or lock them out
@@ -36,6 +46,11 @@ const RequireVerifiedVisitor = ({ children }) => {
 
   const handleVerified = (token) => {
     setStoredToken(token);
+    // The AlbumsProvider above us already fired its initial /api/albums
+    // fetch (unauthenticated, so it 401'd) before this token existed --
+    // kick off a fresh authenticated load now so the gallery is populated
+    // the moment we flip to 'verified', instead of showing that failure.
+    reloadAlbums();
     setStatus('verified');
   };
 

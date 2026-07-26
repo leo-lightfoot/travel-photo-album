@@ -1,4 +1,5 @@
-import { updateAlbum, updatePhoto } from '../lib/albums.js';
+import { updateAlbum, updatePhoto, deletePhoto } from '../lib/albums.js';
+import { listSubscribers } from '../lib/d1.js';
 import { jsonResponse } from '../lib/http.js';
 
 async function readJsonBody(request) {
@@ -7,6 +8,13 @@ async function readJsonBody(request) {
   } catch {
     return null;
   }
+}
+
+// Quote a CSV field only when it contains a comma, quote, or newline;
+// embedded quotes are doubled per RFC 4180.
+function csvField(value) {
+  const s = value == null ? '' : String(value);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export async function handleUpdateAlbum(request, env, albumId) {
@@ -32,4 +40,52 @@ export async function handleUpdatePhoto(request, env) {
   const updated = await updatePhoto(env.DB, url, { caption, featured, tags });
   if (!updated) return jsonResponse({ error: 'Photo not found' }, 404);
   return jsonResponse({ ok: true });
+}
+
+// Permanently deletes a single photo: removes the underlying R2 object FIRST
+// (so a deleted -- especially private -- photo isn't left publicly fetchable
+// by its direct URL) and only then the D1 row. If the R2 delete fails,
+// nothing is removed from the database so the two stay consistent.
+export async function handleDeletePhoto(request, env) {
+  const body = await readJsonBody(request);
+  const url = typeof body?.url === 'string' ? body.url : '';
+  if (!url) return jsonResponse({ error: 'url is required' }, 400);
+
+  const base = env.R2_PUBLIC_BASE_URL || '';
+  if (base && url.startsWith(`${base}/`) && env.PHOTOS_BUCKET) {
+    const key = url.slice(base.length + 1);
+    try {
+      await env.PHOTOS_BUCKET.delete(key);
+    } catch (err) {
+      console.error('Failed to delete R2 object:', key, err);
+      return jsonResponse({ error: 'Could not delete the image file. Nothing was removed.' }, 502);
+    }
+  }
+
+  const deleted = await deletePhoto(env.DB, url);
+  if (!deleted) return jsonResponse({ error: 'Photo not found' }, 404);
+  return jsonResponse({ ok: true });
+}
+
+// Exports the email subscriber list as a CSV download. Same admin gate as
+// the rest of /api/admin/* (Cloudflare Access + the ADMIN_EMAILS allowlist);
+// a plain <a href> from the admin page works because the Access cookie rides
+// along on the same-origin navigation.
+export async function handleListSubscribers(request, env) {
+  const subscribers = await listSubscribers(env.DB);
+  const header = ['email', 'first_verified_at', 'last_verified_at', 'verify_count'];
+  const lines = [header.join(',')];
+  for (const s of subscribers) {
+    lines.push([s.email, s.first_verified_at, s.last_verified_at, s.verify_count].map(csvField).join(','));
+  }
+  // Leading ﻿ (BOM) so Excel opens UTF-8 correctly.
+  const csv = `﻿${lines.join('\r\n')}`;
+
+  return new Response(csv, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="subscribers.csv"'
+    }
+  });
 }

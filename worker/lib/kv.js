@@ -10,6 +10,13 @@ const MAX_CONFIRM_ATTEMPTS = 5;
 const UNLOCK_RATE_LIMIT_WINDOW_SECONDS = 60 * 60; // 1 hour
 const UNLOCK_RATE_LIMIT_MAX_ATTEMPTS = 10;
 
+// /api/session/check is hit on every page load by a returning verified
+// visitor, so this is far more lenient than the guess-guarding limits above
+// -- it isn't guarding a secret, it only exists to stop a single source
+// from flooding what was previously the one unthrottled endpoint.
+const SESSION_CHECK_RATE_LIMIT_WINDOW_SECONDS = 60 * 60; // 1 hour
+const SESSION_CHECK_RATE_LIMIT_MAX_ATTEMPTS = 60;
+
 export function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
@@ -88,4 +95,11 @@ export async function checkRateLimit(kv, email, ip) {
 // makes it a real network-guessable endpoint for the first time.
 export async function checkUnlockRateLimit(kv, albumId, ip) {
   return checkAndIncrement(kv, `ratelimit:unlock:${albumId}:${ip}`, UNLOCK_RATE_LIMIT_MAX_ATTEMPTS, UNLOCK_RATE_LIMIT_WINDOW_SECONDS);
+}
+
+// Rate-limits /api/session/check, keyed on IP alone -- the only input is an
+// opaque token we don't (and shouldn't) parse before this runs, so there's
+// no email/album to scope it by.
+export async function checkSessionCheckRateLimit(kv, ip) {
+  return checkAndIncrement(kv, `ratelimit:session:${ip}`, SESSION_CHECK_RATE_LIMIT_MAX_ATTEMPTS, SESSION_CHECK_RATE_LIMIT_WINDOW_SECONDS);
 }

@@ -9,7 +9,7 @@ import { jsonResponse } from '../lib/http.js';
 // Even for a verified visitor, private albums come back as a locked teaser
 // only (see getAlbumsForVisitor) until /api/albums/:id/unlock succeeds.
 export async function handleGetAlbums(request, env) {
-  if (isAdminRequest(request)) {
+  if (isAdminRequest(request, env)) {
     return jsonResponse(await getAlbumsForAdmin(env.DB));
   }
 

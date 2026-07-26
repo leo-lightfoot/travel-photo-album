@@ -62,6 +62,32 @@ const AdminPage = () => {
     setStatus((s) => ({ ...s, [photo.url]: res.ok ? 'saved' : 'error' }));
   };
 
+  const deletePhoto = async (album, photo) => {
+    const ok = window.confirm(
+      'Delete this photo permanently?\n\nIt will be removed from the site and its file deleted from storage. This cannot be undone.'
+    );
+    if (!ok) return;
+    setStatus((s) => ({ ...s, [photo.url]: 'saving' }));
+    const res = await fetch('/api/admin/photos', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: photo.url })
+    });
+    if (!res.ok) {
+      setStatus((s) => ({ ...s, [photo.url]: 'error' }));
+      return;
+    }
+    setAlbums((prev) => prev.map((a) => (
+      a.id !== album.id
+        ? a
+        : {
+            ...a,
+            photos: (a.photos || []).filter((p) => p.url !== photo.url),
+            photoCount: Math.max(0, (a.photoCount || 1) - 1)
+          }
+    )));
+  };
+
   const statusMark = (key) => {
     if (status[key] === 'saving') return '…';
     if (status[key] === 'saved') return '✓';
@@ -75,7 +101,18 @@ const AdminPage = () => {
 
   return (
     <div className="max-w-4xl mx-auto p-8">
-      <h1 className="text-2xl font-light text-slate-800 mb-6">Admin — Edit Albums</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-light text-slate-800">Admin — Edit Albums</h1>
+        {/* Plain link: the Cloudflare Access cookie rides along on this
+            same-origin navigation, so the admin-gated CSV endpoint authorizes
+            without any extra header handling. */}
+        <a
+          href="/api/admin/subscribers"
+          className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded text-sm hover:bg-slate-200 transition"
+        >
+          Export subscribers (CSV)
+        </a>
+      </div>
 
       <label className="block text-sm text-slate-600 mb-1">Album</label>
       <select
@@ -147,12 +184,20 @@ const AdminPage = () => {
                   />
                   Featured on landing page
                 </label>
-                <button
-                  onClick={() => savePhoto(album, photo)}
-                  className="px-2 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-600 transition"
-                >
-                  Save {statusMark(photo.url)}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => savePhoto(album, photo)}
+                    className="px-2 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-600 transition"
+                  >
+                    Save {statusMark(photo.url)}
+                  </button>
+                  <button
+                    onClick={() => deletePhoto(album, photo)}
+                    className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 transition"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>

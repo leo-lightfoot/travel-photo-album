@@ -143,3 +143,26 @@ export async function updatePhoto(db, url, { caption, featured, tags }) {
   ).bind(caption ?? '', featured ? 1 : 0, JSON.stringify(tags ?? []), url).run();
   return meta.changes > 0;
 }
+
+// Deletes a photo row. If it was its album's cover image, repoint the cover
+// at the next remaining photo (by sort order) so the album card doesn't
+// render a broken image. Returns false if the photo didn't exist.
+// NOTE: the R2 object itself is deleted by the caller (handleDeletePhoto) --
+// this only touches D1.
+export async function deletePhoto(db, url) {
+  const photo = await db.prepare('SELECT album_id FROM photos WHERE url = ?1').bind(url).first();
+  if (!photo) return false;
+
+  await db.prepare('DELETE FROM photos WHERE url = ?1').bind(url).run();
+
+  const album = await db.prepare('SELECT cover_image FROM albums WHERE id = ?1').bind(photo.album_id).first();
+  if (album && album.cover_image === url) {
+    const next = await db.prepare(
+      'SELECT url FROM photos WHERE album_id = ?1 ORDER BY sort_order LIMIT 1'
+    ).bind(photo.album_id).first();
+    if (next) {
+      await db.prepare('UPDATE albums SET cover_image = ?1 WHERE id = ?2').bind(next.url, photo.album_id).run();
+    }
+  }
+  return true;
+}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { useAlbums } from '../hooks/useAlbums';
+import { useFeaturedPhotos } from '../hooks/useFeaturedPhotos';
 import { useSiteContent } from '../hooks/useSiteContent';
 import Hero from '../components/landing/Hero';
 import FeaturedPhotos from '../components/landing/FeaturedPhotos';
@@ -9,7 +9,7 @@ import ContactSection from '../components/landing/ContactSection';
 import { instagramDmUrl } from '../lib/instagram';
 
 const LandingPage = () => {
-  const { albums, loadState: albumsState } = useAlbums();
+  const { photos: featuredPhotos, loadState: albumsState } = useFeaturedPhotos();
   const { content, loadState: contentState } = useSiteContent();
 
   if (albumsState === 'loading' || contentState === 'loading') {
@@ -30,13 +30,6 @@ const LandingPage = () => {
       </div>
     );
   }
-
-  // Public-only, deliberately: this page sits in front of both the email
-  // gate and the private-album passcode, so it must never surface a photo
-  // from albums.private.
-  const featuredPhotos = albums.public.flatMap(album =>
-    album.photos.filter(photo => photo.featured)
-  );
 
   const instagramDm = instagramDmUrl(content.contact?.instagram);
 

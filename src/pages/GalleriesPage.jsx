@@ -45,8 +45,8 @@ const GalleriesPage = () => {
     }
   };
 
-  const handleUnlock = () => {
-    unlockAlbum(attemptingUnlock.id);
+  const handleUnlock = (unlockedAlbum) => {
+    unlockAlbum(attemptingUnlock.id, unlockedAlbum);
     const album = attemptingUnlock;
     setAttemptingUnlock(null);
     navigate(`/galleries/${album.id}`);

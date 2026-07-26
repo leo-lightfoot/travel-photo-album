@@ -38,7 +38,7 @@ You ─▶ /admin (Cloudflare Access login) ─▶ pick an album ─▶ edit
 | Routing | `react-router-dom` | `src/App.jsx` |
 | Styling | Tailwind CSS v4, compiled via `@tailwindcss/vite` | `vite.config.js`, `src/index.css` |
 | Gallery data | Album/photo metadata + R2 URLs, fetched client-side from `/api/albums` | `worker/lib/albums.js`, D1 `albums`/`photos` tables |
-| Landing page content | Booking info, testimonials, contact details | `public/content.json` |
+| Landing page content | Photographer name/tagline, hero image, booking info, contact details | `public/content.json` |
 | Backend | **One Cloudflare Worker** — serves the built static site *and* the `/api/*` endpoints from the same origin (no separate server, no CORS) | `worker/` |
 | Email verification | Real 6-digit codes sent via Resend; a signed session token is issued on success | `worker/routes/verify.js`, `worker/routes/session.js`, `worker/lib/token.js` |
 | Pending codes / rate limits | Cloudflare KV | `worker/lib/kv.js`, bound in `wrangler.jsonc` |
@@ -304,8 +304,9 @@ npx wrangler d1 execute subscribers-db --local --command "SELECT * FROM albums"
 
 ## 5. The email gate + private albums — what the protection actually is
 
-There are **two separate layers**, and it's worth being precise about
-what each one does and doesn't guarantee.
+There are **two separate layers**, and both are enforced server-side —
+the gate governs the actual data now, not just what the React app
+chooses to render.
 
 ### The email gate (`/galleries` and below)
 
@@ -316,38 +317,56 @@ signed session token (HMAC, ~60-day expiry) stored in the visitor's
 code it's invalidated outright (`worker/lib/kv.js`). The visitor's email
 is also upserted into the D1 `subscribers` table.
 
-**What this is, currently:** a genuine "you provided a real, working
-email address" check, with friction proportional to actually receiving
-and typing a code. **What this is not, yet:** access control on the
-underlying data. `GET /api/albums` — the endpoint that returns every
-album (public and private), every photo's direct R2 URL, and every
-private album's plaintext `secretCode` — has no authentication at all.
-Anyone who requests it directly gets everything in it, gate or no gate;
-the gate only governs what the React app chooses to render for a normal
-visitor clicking through the site. This is a known, accepted limitation
-for now — the gate's current value is the friction and the verified-email
-capture, not data confidentiality. Closing this properly (gating
-`/api/albums` by the same session token, while still letting the public
-landing page's featured photos through unauthenticated) is a planned
-follow-up, not yet built.
+That token is what gates the data: `GET /api/albums` requires it as
+`Authorization: Bearer <token>` (verified server-side in
+`worker/routes/albums.js` via `worker/lib/sessionAuth.js`) — no token, an
+invalid one, or an expired one all get a flat 401, before any album data
+is touched. The one deliberate exception is `GET /api/featured`, a
+separate public endpoint returning only featured public photos (no album
+metadata, no private data) — that's what the landing page's "Recent Work"
+section uses, since it's shown before anyone has gone through the gate.
 
 ### The private-album passcode (on top of the gate)
 
 Each private album has a `secretCode` (set via `album-info.json` when the
-album is created — see §6), checked client-side in the browser
-(case-insensitive, trimmed). Visible in DevTools and in the `/api/albums`
-response itself — same caveat as above, just at the individual-album
-level instead of the whole gallery. Unlock state lives in memory only and
-resets on a real page reload. Fine for "family/friends, don't want it
-showing up in casual browsing" — not real security for genuinely
-sensitive photos.
+album is created — see §6), and it's checked **server-side** now:
+`POST /api/albums/:id/unlock` (also requiring the session token) compares
+the submitted code against D1's stored value with a timing-safe compare
+(`worker/lib/timingSafe.js`), rate-limited to 10 attempts/hour per
+album+IP (`checkUnlockRateLimit` in `worker/lib/kv.js`) — the same idea as
+the email code's brute-force protection, just more lenient since a
+passcode is meant to be reused indefinitely by family/friends rather than
+being a one-time code.
+
+Until an album is unlocked, `GET /api/albums` returns only a locked
+"teaser" for it — id, name, cover image, description, category, photo
+count — with no `secretCode` and no photo URLs at all. The real photo list
+only ever comes back from a successful unlock call, and is held in memory
+on the client (`useUnlockedAlbums`) — it resets on a real page reload,
+same as before, so bookmarking or refreshing a private album's URL still
+re-prompts for the code (enforced in `AlbumDetailPage.jsx` directly, not
+just the gallery grid's click handler).
+
+Net effect: a private album's passcode and its photos' actual URLs are
+never present anywhere in the page or its JS until the server has verified
+the code. This closes what used to be the gap here — previously, every
+photo URL and the plaintext `secretCode` for every album, locked or not,
+shipped to the browser upfront, and the "lock" was purely a UI decision
+with nothing backing it server-side.
 
 ### Admin editing (`/admin`)
 
-Unlike the visitor-facing gate, `/admin` and `/api/admin/*` are protected
-by Cloudflare Access at the edge (§3.10) — a real login (email + one-time
-code), enforced before the request ever reaches the Worker. This is
-separate from, and stronger than, the email/passcode gate above.
+`/admin` and `/api/admin/*` are protected by Cloudflare Access at the edge
+(§3.10) — a real login (email + one-time code), enforced before the
+request ever reaches the Worker. Access-authenticated requests get the
+full, unrestricted view of all album/photo data (including private
+albums' `secretCode`) from the same `GET /api/albums` endpoint —
+`worker/lib/adminAuth.js`'s check runs before the visitor session-token
+check, so an Access-authenticated admin never needs a visitor session
+token at all. (If `/admin` is ever loaded without a valid Access session
+— e.g. accidentally testing it outside the protected custom domain — it
+degrades to the same locked-teaser view a regular visitor gets, and shows
+a message rather than crashing.)
 
 ### Rate limiting
 
@@ -355,8 +374,10 @@ separate from, and stronger than, the email/passcode gate above.
 email **and** per IP in KV — protects Resend's 100/day cap from abuse.
 `/api/verify/confirm` (submitting a code): max 5 wrong guesses per issued
 code before it's invalidated — protects against brute-forcing the 6-digit
-space. Both are best-effort (KV has no atomic compare-and-swap), which is
-an acceptable tradeoff for what they're protecting against.
+space. `/api/albums/:id/unlock` (guessing a private album's passcode): max
+10 attempts per hour per album+IP. All three are best-effort (KV has no
+atomic compare-and-swap), which is an acceptable tradeoff for what they're
+protecting against.
 
 ---
 
@@ -465,15 +486,76 @@ a generator. Shape:
 
 ```json
 {
-  "site": { "photographerName": "...", "tagline": "..." },
+  "site": { "photographerName": "...", "tagline": "...", "heroImage": "/hero.jpg" },
   "contact": { "email": "...", "phone": "...", "instagram": "...", "location": "..." },
-  "booking": { "headline": "...", "body": "...", "availabilityNote": "..." },
-  "testimonials": [ { "id": "t1", "name": "...", "quote": "...", "context": "..." } ]
+  "booking": { "headline": "...", "body": "...", "availabilityNote": "..." }
 }
 ```
 
-Currently populated with placeholder copy ("Your Name", `you@example.com`,
-etc.) — replace with real content before treating the site as launched.
+Any field left as an empty string is simply omitted from the rendered
+page rather than showing up blank — e.g. `tagline: ""` hides the tagline
+line entirely, `phone: ""` hides the phone link in the footer,
+`availabilityNote: ""` hides the amber availability pill.
+
+`contact.instagram` should be the full profile URL (e.g.
+`https://www.instagram.com/yourhandle/`) — `src/lib/instagram.js` derives
+Instagram's direct-message deep link (`https://ig.me/m/<username>`) from
+it automatically for the "Message on Instagram" buttons, so there's
+nothing separate to configure for those.
+
+### The hero/cover image
+
+`site.heroImage` points at a static file served straight from `public/`
+(currently `/hero.jpg`) — it is **not** part of the R2/D1 photo pipeline
+(§6), since it's a single site-wide asset rather than an album photo. To
+replace it:
+
+```bash
+node -e "
+const sharp = require('sharp');
+sharp('/path/to/your/new/cover.jpg')
+  .rotate()
+  .resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true })
+  .jpeg({ quality: 80, mozjpeg: true })
+  .toFile('public/hero.jpg');
+"
+```
+
+(2400px/quality 80 is what's currently used — a hero background sits at
+partial opacity under a dark gradient, so it doesn't need full quality,
+but it does get downloaded on every landing-page visit so it's worth
+keeping compressed.) It's also referenced directly in `index.html`'s
+Open Graph/Twitter image tags (below) as an absolute URL, so replacing the
+file automatically updates social-share previews too.
+
+### Favicon and social preview tags
+
+`public/favicon.png` and the `<title>`/`<meta name="description">`/Open
+Graph/Twitter tags all live in `index.html`, hand-edited directly — none
+of it comes from `content.json`. If you ever regenerate the favicon from
+a photo, check it at actual size first (a full photo crop reads as an
+indistinct blob at 16–32px) — a simple monogram/logo mark tends to hold
+up far better than a busy photo:
+
+```bash
+node -e "
+const sharp = require('sharp');
+sharp('/path/to/512x512-source.png').resize(512, 512).png().toFile('public/favicon.png');
+"
+```
+
+### Button text and section headings
+
+Labels like "View Galleries", "Message on Instagram", "Get in Touch", and
+the footer's "Contact" heading are hardcoded in JSX, not editable via
+`content.json`:
+
+| Text | File |
+|---|---|
+| "View Galleries", hero's "Message on Instagram" | `src/components/landing/Hero.jsx` |
+| "Get in Touch", booking's "Message on Instagram" | `src/components/landing/BookingSection.jsx` |
+| Footer "Contact" heading, "Instagram" link label | `src/components/landing/ContactSection.jsx` |
+| "Recent Work", "View all galleries" | `src/components/landing/FeaturedPhotos.jsx` |
 
 A photo's `featured` flag (public albums only, set on `/admin`) is what
 surfaces it in the landing page's "Recent Work" section
@@ -537,6 +619,9 @@ npx wrangler d1 execute subscribers-db --remote --command "DELETE FROM subscribe
 - Codes are compared case-insensitively and trimmed — if it still fails,
   check for a typo in the album's `secretCode`, e.g.
   `npx wrangler d1 execute subscribers-db --remote --command "SELECT id, secret_code FROM albums WHERE is_private = 1"`.
+- If it's failing after several tries, check for the passcode's own rate
+  limit (§5) — 10 attempts/hour per album+IP — via
+  `wrangler kv key get "ratelimit:unlock:<albumId>:<ip>" --namespace-id <id> --remote`.
 
 **Images don't load**
 - Confirm R2 public access is enabled on the bucket (§3.2).

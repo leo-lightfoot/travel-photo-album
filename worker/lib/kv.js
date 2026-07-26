@@ -3,6 +3,13 @@ const RATE_LIMIT_WINDOW_SECONDS = 60 * 60; // 1 hour
 const RATE_LIMIT_MAX_ATTEMPTS = 5;
 const MAX_CONFIRM_ATTEMPTS = 5;
 
+// A private album's passcode is meant to be reused indefinitely by family/
+// friends (unlike a one-time email code), so this is more lenient than the
+// email rate limit -- it exists to stop online brute-forcing, not to
+// throttle legitimate repeat use.
+const UNLOCK_RATE_LIMIT_WINDOW_SECONDS = 60 * 60; // 1 hour
+const UNLOCK_RATE_LIMIT_MAX_ATTEMPTS = 10;
+
 export function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
@@ -45,9 +52,9 @@ export async function recordFailedAttempt(kv, email, pending) {
 
 // Best-effort fixed-window limiter, not atomic (KV has no compare-and-swap).
 // A handful of requests racing at the exact same instant could squeak past
-// the cap by one or two -- acceptable here since this exists to protect the
-// Resend 100/day quota from abuse, not as a hard security boundary.
-async function checkAndIncrement(kv, key) {
+// the cap by one or two -- acceptable here since this exists to protect
+// against abuse, not as a hard security boundary.
+async function checkAndIncrement(kv, key, maxAttempts, windowSeconds) {
   const now = Date.now();
   const raw = await kv.get(key);
   let windowStart = now;
@@ -55,22 +62,30 @@ async function checkAndIncrement(kv, key) {
 
   if (raw) {
     const parsed = JSON.parse(raw);
-    if (now - parsed.windowStart < RATE_LIMIT_WINDOW_SECONDS * 1000) {
+    if (now - parsed.windowStart < windowSeconds * 1000) {
       windowStart = parsed.windowStart;
       count = parsed.count;
     }
   }
 
-  if (count >= RATE_LIMIT_MAX_ATTEMPTS) return false;
+  if (count >= maxAttempts) return false;
 
   await kv.put(key, JSON.stringify({ windowStart, count: count + 1 }), {
-    expirationTtl: RATE_LIMIT_WINDOW_SECONDS * 2
+    expirationTtl: windowSeconds * 2
   });
   return true;
 }
 
 export async function checkRateLimit(kv, email, ip) {
-  const emailOk = await checkAndIncrement(kv, `ratelimit:email:${normalizeEmail(email)}`);
+  const emailOk = await checkAndIncrement(kv, `ratelimit:email:${normalizeEmail(email)}`, RATE_LIMIT_MAX_ATTEMPTS, RATE_LIMIT_WINDOW_SECONDS);
   if (!emailOk) return false;
-  return checkAndIncrement(kv, `ratelimit:ip:${ip}`);
+  return checkAndIncrement(kv, `ratelimit:ip:${ip}`, RATE_LIMIT_MAX_ATTEMPTS, RATE_LIMIT_WINDOW_SECONDS);
+}
+
+// Rate-limits guesses at a private album's passcode, per album+IP -- this
+// only matters now that the passcode is checked server-side (worker/lib/
+// albums.js's verifyAlbumUnlock) instead of compared in the browser, which
+// makes it a real network-guessable endpoint for the first time.
+export async function checkUnlockRateLimit(kv, albumId, ip) {
+  return checkAndIncrement(kv, `ratelimit:unlock:${albumId}:${ip}`, UNLOCK_RATE_LIMIT_MAX_ATTEMPTS, UNLOCK_RATE_LIMIT_WINDOW_SECONDS);
 }

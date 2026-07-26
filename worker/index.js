@@ -1,11 +1,13 @@
 import { handleVerifyStart, handleVerifyConfirm } from './routes/verify.js';
 import { handleSessionCheck } from './routes/session.js';
-import { handleGetAlbums } from './routes/albums.js';
+import { handleGetAlbums, handleGetFeatured } from './routes/albums.js';
+import { handleUnlockAlbum } from './routes/unlock.js';
 import { handleUpdateAlbum, handleUpdatePhoto } from './routes/admin.js';
 import { isAdminRequest } from './lib/adminAuth.js';
 import { jsonResponse } from './lib/http.js';
 
-const ALBUM_ID_ROUTE = /^\/api\/admin\/albums\/([^/]+)$/;
+const ADMIN_ALBUM_ID_ROUTE = /^\/api\/admin\/albums\/([^/]+)$/;
+const UNLOCK_ROUTE = /^\/api\/albums\/([^/]+)\/unlock$/;
 
 async function handleApi(request, env, pathname) {
   if (pathname === '/api/verify/start' && request.method === 'POST') {
@@ -20,8 +22,17 @@ async function handleApi(request, env, pathname) {
     return handleSessionCheck(request, env);
   }
 
+  if (pathname === '/api/featured' && request.method === 'GET') {
+    return handleGetFeatured(request, env);
+  }
+
   if (pathname === '/api/albums' && request.method === 'GET') {
     return handleGetAlbums(request, env);
+  }
+
+  const unlockMatch = pathname.match(UNLOCK_ROUTE);
+  if (unlockMatch && request.method === 'POST') {
+    return handleUnlockAlbum(request, env, unlockMatch[1]);
   }
 
   if (pathname.startsWith('/api/admin/')) {
@@ -29,7 +40,7 @@ async function handleApi(request, env, pathname) {
       return jsonResponse({ error: 'Forbidden' }, 403);
     }
 
-    const albumIdMatch = pathname.match(ALBUM_ID_ROUTE);
+    const albumIdMatch = pathname.match(ADMIN_ALBUM_ID_ROUTE);
     if (albumIdMatch && request.method === 'PUT') {
       return handleUpdateAlbum(request, env, albumIdMatch[1]);
     }

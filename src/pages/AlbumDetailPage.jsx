@@ -10,14 +10,14 @@ import UnlockAlbumModal from '../components/gallery/UnlockAlbumModal';
 const AlbumDetailPage = () => {
   const { albumId } = useParams();
   const { albums } = useAlbums();
-  const { isUnlocked, unlockAlbum } = useUnlockedAlbums();
+  const { isUnlocked, unlockAlbum, getUnlockedAlbum } = useUnlockedAlbums();
   const navigate = useNavigate();
   const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const isPrivateAlbum = albums.private.some(a => a.id === albumId);
-  const album = [...albums.public, ...albums.private].find(a => a.id === albumId);
+  const baseAlbum = [...albums.public, ...albums.private].find(a => a.id === albumId);
 
-  if (!album) {
+  if (!baseAlbum) {
     return (
       <div className="text-center py-24">
         <p className="text-slate-600 mb-4">This album doesn't exist (or was removed).</p>
@@ -29,15 +29,20 @@ const AlbumDetailPage = () => {
   // A private album's detail page is directly reachable by URL (bookmark,
   // refresh, shared link) -- so the passcode gate has to be enforced here
   // too, not just from the click handler on the gallery grid.
-  if (isPrivateAlbum && !isUnlocked(album.id)) {
+  if (isPrivateAlbum && !isUnlocked(baseAlbum.id)) {
     return (
       <UnlockAlbumModal
-        album={album}
-        onUnlock={() => unlockAlbum(album.id)}
+        album={baseAlbum}
+        onUnlock={(unlockedAlbum) => unlockAlbum(baseAlbum.id, unlockedAlbum)}
         onCancel={() => navigate('/galleries')}
       />
     );
   }
+
+  // The base /api/albums response never includes a private album's photos
+  // (only /api/albums/:id/unlock does, server-side, once the passcode is
+  // verified) -- so once unlocked, the real data comes from there instead.
+  const album = isPrivateAlbum ? getUnlockedAlbum(albumId) : baseAlbum;
 
   const openLightbox = (photo, index) => {
     setSelectedPhoto({ ...photo, index, total: album.photos.length });

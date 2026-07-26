@@ -1,15 +1,38 @@
 import React, { useState } from 'react';
-import { Lock, AlertCircle } from 'lucide-react';
+import { Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { getStoredToken } from '../../lib/sessionToken';
 
+// The passcode is checked server-side now (POST /api/albums/:id/unlock) --
+// album.secretCode no longer exists on the client at all until this
+// succeeds, so there's nothing to compare locally anymore.
 const UnlockAlbumModal = ({ album, onUnlock, onCancel }) => {
   const [codeInput, setCodeInput] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
-    if (codeInput.trim().toUpperCase() === album.secretCode.trim().toUpperCase()) {
-      onUnlock();
-    } else {
-      setError('Invalid code. Please try again.');
+  const handleSubmit = async () => {
+    if (loading) return;
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/albums/${album.id}/unlock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getStoredToken()}`
+        },
+        body: JSON.stringify({ code: codeInput })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Invalid code. Please try again.');
+        return;
+      }
+      onUnlock(data.album);
+    } catch {
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -44,12 +67,15 @@ const UnlockAlbumModal = ({ album, onUnlock, onCancel }) => {
         <div className="flex gap-3">
           <button
             onClick={handleSubmit}
-            className="flex-1 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition"
+            disabled={loading}
+            className="flex-1 bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             Unlock
           </button>
           <button
             onClick={onCancel}
+            disabled={loading}
             className="px-4 py-2 text-slate-600 hover:text-slate-900 transition"
           >
             Cancel

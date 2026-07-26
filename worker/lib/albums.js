@@ -1,3 +1,5 @@
+import { timingSafeEqual } from './timingSafe.js';
+
 function rowToAlbum(row, photos) {
   const album = {
     id: row.id,
@@ -22,24 +24,110 @@ function rowToAlbum(row, photos) {
   return album;
 }
 
-export async function getAlbums(db) {
-  const [{ results: albumRows }, { results: photoRows }] = await Promise.all([
-    db.prepare('SELECT * FROM albums ORDER BY created_at').all(),
-    db.prepare('SELECT * FROM photos ORDER BY album_id, sort_order').all()
-  ]);
+// The teaser shown for a locked private album in the gallery grid -- cover
+// image and description are fine to show as a preview, but no secretCode
+// and no photos array, since those are only handed over by
+// verifyAlbumUnlock() once the correct passcode has actually been checked
+// server-side.
+function rowToLockedAlbum(row, photoCount) {
+  const album = {
+    id: row.id,
+    name: row.name,
+    coverImage: row.cover_image,
+    photoCount,
+    tags: JSON.parse(row.tags || '[]')
+  };
+  if (row.description) album.description = row.description;
+  if (row.date) album.date = row.date;
+  if (row.category) album.category = row.category;
+  return album;
+}
 
+function groupPhotosByAlbum(photoRows) {
   const photosByAlbum = new Map();
   for (const photo of photoRows) {
     if (!photosByAlbum.has(photo.album_id)) photosByAlbum.set(photo.album_id, []);
     photosByAlbum.get(photo.album_id).push(photo);
   }
+  return photosByAlbum;
+}
 
+// Full data, including private albums' secretCode and photos -- only for
+// Cloudflare Access-authenticated admin requests (see worker/lib/adminAuth.js).
+export async function getAlbumsForAdmin(db) {
+  const [{ results: albumRows }, { results: photoRows }] = await Promise.all([
+    db.prepare('SELECT * FROM albums ORDER BY created_at').all(),
+    db.prepare('SELECT * FROM photos ORDER BY album_id, sort_order').all()
+  ]);
+
+  const photosByAlbum = groupPhotosByAlbum(photoRows);
   const result = { public: [], private: [] };
   for (const row of albumRows) {
     const album = rowToAlbum(row, photosByAlbum.get(row.id) || []);
     result[row.is_private ? 'private' : 'public'].push(album);
   }
   return result;
+}
+
+// What a session-token-verified visitor gets: public albums in full, private
+// albums as a locked teaser only (no secretCode, no photo URLs) until
+// verifyAlbumUnlock() succeeds for that specific album.
+export async function getAlbumsForVisitor(db) {
+  const [{ results: albumRows }, { results: photoRows }] = await Promise.all([
+    db.prepare('SELECT * FROM albums ORDER BY created_at').all(),
+    db.prepare('SELECT * FROM photos ORDER BY album_id, sort_order').all()
+  ]);
+
+  const photosByAlbum = groupPhotosByAlbum(photoRows);
+  const result = { public: [], private: [] };
+  for (const row of albumRows) {
+    const photos = photosByAlbum.get(row.id) || [];
+    if (row.is_private) {
+      result.private.push(rowToLockedAlbum(row, photos.length));
+    } else {
+      result.public.push(rowToAlbum(row, photos));
+    }
+  }
+  return result;
+}
+
+// Public, unauthenticated -- exactly what the pre-gate landing page's
+// "Recent Work" section needs and nothing else.
+export async function getFeaturedPublicPhotos(db) {
+  const { results } = await db.prepare(
+    `SELECT p.url, p.caption FROM photos p
+     JOIN albums a ON a.id = p.album_id
+     WHERE a.is_private = 0 AND p.featured = 1
+     ORDER BY p.album_id, p.sort_order`
+  ).all();
+  return results.map((p) => ({ url: p.url, caption: p.caption }));
+}
+
+// Checks a submitted passcode against the album's stored secret_code
+// server-side (case-insensitive, trimmed -- same normalization the old
+// client-side check used) and only returns the real photo list on a match.
+// Returns null for: album not found, not private, no code set, or a wrong
+// guess -- callers shouldn't distinguish these to avoid leaking which case
+// applies.
+export async function verifyAlbumUnlock(db, albumId, submittedCode) {
+  const row = await db.prepare(
+    'SELECT * FROM albums WHERE id = ?1 AND is_private = 1'
+  ).bind(albumId).first();
+  if (!row || !row.secret_code || typeof submittedCode !== 'string') return null;
+
+  const normalizedSubmitted = submittedCode.trim().toUpperCase();
+  const normalizedStored = row.secret_code.trim().toUpperCase();
+  if (!timingSafeEqual(normalizedSubmitted, normalizedStored)) return null;
+
+  const { results: photoRows } = await db.prepare(
+    'SELECT * FROM photos WHERE album_id = ?1 ORDER BY sort_order'
+  ).bind(albumId).all();
+
+  // The caller already knows the code -- they just typed it correctly --
+  // so there's no reason to echo it back in the response.
+  const album = rowToAlbum(row, photoRows);
+  delete album.secretCode;
+  return album;
 }
 
 export async function updateAlbum(db, id, { description, category }) {

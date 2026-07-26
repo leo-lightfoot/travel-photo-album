@@ -11,6 +11,7 @@ import { sendVerificationEmail } from '../lib/email.js';
 import { upsertSubscriber } from '../lib/d1.js';
 import { createSessionToken } from '../lib/token.js';
 import { jsonResponse } from '../lib/http.js';
+import { timingSafeEqual } from '../lib/timingSafe.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -20,17 +21,6 @@ async function readJsonBody(request) {
   } catch {
     return null;
   }
-}
-
-// Fixed-length codes, so a simple XOR-accumulate comparison is safe and
-// avoids leaking how many leading digits matched via string-compare timing.
-function codesMatch(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
 }
 
 export async function handleVerifyStart(request, env) {
@@ -77,7 +67,7 @@ export async function handleVerifyConfirm(request, env) {
     return jsonResponse({ error: 'Invalid or expired code.' }, 401);
   }
 
-  if (!codesMatch(pending.code, code)) {
+  if (!timingSafeEqual(pending.code, code)) {
     const { locked } = await recordFailedAttempt(env.VERIFY_CODES, email, pending);
     return jsonResponse(
       { error: locked ? 'Too many incorrect attempts. Please request a new code.' : 'Invalid or expired code.' },

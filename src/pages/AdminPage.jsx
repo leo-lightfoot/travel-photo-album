@@ -29,7 +29,7 @@ const AdminPage = () => {
 
   const updatePhotoField = (albumId, photoUrl, field, value) => {
     setAlbums((prev) => prev.map((a) => (
-      a.id !== albumId ? a : { ...a, photos: a.photos.map((p) => (p.url === photoUrl ? { ...p, [field]: value } : p)) }
+      a.id !== albumId ? a : { ...a, photos: (a.photos || []).map((p) => (p.url === photoUrl ? { ...p, [field]: value } : p)) }
     )));
   };
 
@@ -116,8 +116,15 @@ const AdminPage = () => {
             Save album details {statusMark(album.id)}
           </button>
 
+          {!album.photos && (
+            <p className="mt-6 text-sm text-amber-700 bg-amber-50 inline-block px-4 py-2 rounded-full">
+              Photos for this private album aren't available here -- this page needs to be
+              accessed through the Cloudflare Access-protected /admin URL to see them.
+            </p>
+          )}
+
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {album.photos.map((photo) => (
+            {(album.photos || []).map((photo) => (
               <div key={photo.url} className="border border-slate-200 rounded p-2">
                 <img src={photo.url} alt="" className="w-full h-32 object-cover rounded mb-2" />
                 <input

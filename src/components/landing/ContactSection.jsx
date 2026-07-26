@@ -7,7 +7,7 @@ const ContactSection = ({ contact }) => {
   return (
     <footer className="bg-slate-900 text-slate-300">
       <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-        <h2 className="text-2xl font-light text-white mb-8">Get in Touch</h2>
+        <h2 className="text-2xl font-light text-white mb-8">Contact</h2>
         <div className="flex flex-wrap justify-center gap-6 text-sm">
           {contact.email && (
             <a href={`mailto:${contact.email}`} className="flex items-center gap-2 hover:text-white transition">

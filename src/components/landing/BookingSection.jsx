@@ -1,7 +1,7 @@
 import React from 'react';
-import { CalendarCheck } from 'lucide-react';
+import { CalendarCheck, Instagram } from 'lucide-react';
 
-const BookingSection = ({ booking, contactEmail }) => {
+const BookingSection = ({ booking, contactEmail, instagramDm }) => {
   if (!booking) return null;
 
   return (
@@ -17,14 +17,27 @@ const BookingSection = ({ booking, contactEmail }) => {
             {booking.availabilityNote}
           </p>
         )}
-        {contactEmail && (
-          <div>
-            <a
-              href={`mailto:${contactEmail}`}
-              className="inline-block bg-slate-800 text-white px-8 py-3 rounded-full font-medium hover:bg-slate-700 transition"
-            >
-              Get in Touch
-            </a>
+        {(contactEmail || instagramDm) && (
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            {contactEmail && (
+              <a
+                href={`mailto:${contactEmail}`}
+                className="inline-block bg-slate-800 text-white px-8 py-3 rounded-full font-medium hover:bg-slate-700 transition"
+              >
+                Get in Touch
+              </a>
+            )}
+            {instagramDm && (
+              <a
+                href={instagramDm}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 border border-slate-300 text-slate-800 px-8 py-3 rounded-full font-medium hover:bg-slate-50 transition"
+              >
+                <Instagram className="w-4 h-4" />
+                Message on Instagram
+              </a>
+            )}
           </div>
         )}
       </div>

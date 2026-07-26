@@ -6,6 +6,7 @@ import Hero from '../components/landing/Hero';
 import FeaturedPhotos from '../components/landing/FeaturedPhotos';
 import BookingSection from '../components/landing/BookingSection';
 import ContactSection from '../components/landing/ContactSection';
+import { instagramDmUrl } from '../lib/instagram';
 
 const LandingPage = () => {
   const { albums, loadState: albumsState } = useAlbums();
@@ -37,15 +38,18 @@ const LandingPage = () => {
     album.photos.filter(photo => photo.featured)
   );
 
+  const instagramDm = instagramDmUrl(content.contact?.instagram);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Hero
         photographerName={content.site?.photographerName}
         tagline={content.site?.tagline}
         backdropImage={content.site?.heroImage}
+        instagramDm={instagramDm}
       />
       <FeaturedPhotos photos={featuredPhotos} />
-      <BookingSection booking={content.booking} contactEmail={content.contact?.email} />
+      <BookingSection booking={content.booking} contactEmail={content.contact?.email} instagramDm={instagramDm} />
       <ContactSection contact={content.contact} />
     </div>
   );

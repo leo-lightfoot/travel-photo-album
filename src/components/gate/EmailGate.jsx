@@ -73,7 +73,7 @@ const EmailGate = ({ onVerified }) => {
         {step === 'email' && (
           <form onSubmit={handleSendCode}>
             <h2 className="text-2xl font-light text-slate-800 text-center mb-2">
-              Verify your email to continue to the galleries
+              Verify your email to continue!
             </h2>
             <p className="text-slate-500 text-sm text-center mb-6">
               We'll send you a one-time code.
@@ -102,7 +102,7 @@ const EmailGate = ({ onVerified }) => {
               Send Code
             </button>
             <p className="text-xs text-slate-400 text-center mt-4">
-              We'll use your email to grant access to the galleries and let you know about
+              We'll use your email to grant access to our gallery and inform you about
               new uploads. No spam, and you can ask to be removed at any time.
             </p>
           </form>

@@ -15,5 +15,6 @@ Thumbs.db
 .dev.vars
 .dev.vars.*
 
-# generate-albums.cjs upload state
+# generate-albums.cjs upload/sync state
 .r2-upload-manifest.json
+.d1-sync-manifest.json

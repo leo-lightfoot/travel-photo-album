@@ -44,22 +44,31 @@ const CONFIG = {
   jpegQuality: 82
 };
 
+// --local targets the dev-only D1 emulation instead of production, for
+// testing this script/the admin page without touching real data.
+const D1_TARGET_FLAG = process.argv.includes('--local') ? '--local' : '--remote';
+const PRUNE_MODE = process.argv.includes('--prune');
+
 const UPLOAD_MANIFEST_PATH = path.join(__dirname, '.r2-upload-manifest.json');
+// Suffixed by target so a --local test run can never mark something as
+// "already synced" for the --remote (production) database, or vice versa.
+const SYNC_MANIFEST_PATH = path.join(__dirname, `.d1-sync-manifest${D1_TARGET_FLAG === '--local' ? '.local' : ''}.json`);
 const NPX_CMD = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
-function loadUploadManifest() {
+function loadJsonManifest(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(UPLOAD_MANIFEST_PATH, 'utf8'));
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
     return {};
   }
 }
 
-function saveUploadManifest(manifest) {
-  fs.writeFileSync(UPLOAD_MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+function saveJsonManifest(filePath, data) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
-const uploadManifest = loadUploadManifest();
+const uploadManifest = loadJsonManifest(UPLOAD_MANIFEST_PATH);
+const syncManifest = loadJsonManifest(SYNC_MANIFEST_PATH);
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -118,6 +127,17 @@ async function optimizeImageInPlace(filePath) {
   return true;
 }
 
+// Node's execFileSync with shell:true (needed so npx.cmd resolves on
+// Windows) joins the whole argv into one string for the shell to parse
+// itself -- it does NOT quote array elements for you. Any argument built
+// from a local path or R2 key (which can contain spaces -- e.g. an album
+// folder named "Berlin Personal" -- or other shell-meaningful characters)
+// has to be quoted here, or the shell splits it into multiple stray
+// arguments and the CLI being called never sees the value we intended.
+function quoteArg(value) {
+  return `"${String(value).replace(/"/g, '\\"')}"`;
+}
+
 function contentTypeFor(ext) {
   if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
   if (ext === '.png') return 'image/png';
@@ -137,14 +157,14 @@ function uploadIfChanged(localPath, r2Key) {
 
   console.log(`   ⬆️  Uploading ${r2Key}`);
   execFileSync(NPX_CMD, [
-    'wrangler', 'r2', 'object', 'put', `${CONFIG.r2BucketName}/${r2Key}`,
-    '--file', localPath,
+    'wrangler', 'r2', 'object', 'put', quoteArg(`${CONFIG.r2BucketName}/${r2Key}`),
+    '--file', quoteArg(localPath),
     '--remote',
     '--content-type', contentTypeFor(path.extname(localPath).toLowerCase())
   ], { stdio: 'inherit', shell: true });
 
   uploadManifest[r2Key] = fingerprint;
-  saveUploadManifest(uploadManifest); // persist immediately so a later failure doesn't lose this
+  saveJsonManifest(UPLOAD_MANIFEST_PATH, uploadManifest); // persist immediately so a later failure doesn't lose this
   return true;
 }
 
@@ -167,17 +187,14 @@ function sqlString(value) {
 
 // Runs a batch of SQL statements against D1 via the wrangler CLI (same
 // already-authenticated pattern as the R2 uploads above -- no separate DB
-// credentials needed). --local targets the dev-only D1 emulation instead of
-// production, for testing this script/the admin page without touching real data.
-const D1_TARGET_FLAG = process.argv.includes('--local') ? '--local' : '--remote';
-const PRUNE_MODE = process.argv.includes('--prune');
+// credentials needed).
 function runD1Batch(sql) {
   const tmpFile = path.join(os.tmpdir(), `d1-batch-${Date.now()}-${Math.random().toString(36).slice(2)}.sql`);
   fs.writeFileSync(tmpFile, sql, 'utf8');
   try {
     execFileSync(NPX_CMD, [
       'wrangler', 'd1', 'execute', CONFIG.d1DatabaseName,
-      D1_TARGET_FLAG, '--file', tmpFile
+      D1_TARGET_FLAG, '--file', quoteArg(tmpFile), '--yes'
     ], { stdio: 'inherit', shell: true });
   } finally {
     fs.unlinkSync(tmpFile);
@@ -237,7 +254,7 @@ function queryD1(sql) {
   try {
     const out = execFileSync(NPX_CMD, [
       'wrangler', 'd1', 'execute', CONFIG.d1DatabaseName,
-      D1_TARGET_FLAG, '--file', tmpFile, '--json'
+      D1_TARGET_FLAG, '--file', quoteArg(tmpFile), '--json', '--yes'
     ], { shell: true });
     return JSON.parse(out.toString());
   } finally {
@@ -252,7 +269,7 @@ function r2KeyFromUrl(url) {
 function deleteR2Object(r2Key) {
   console.log(`   🗑️  Deleting from R2: ${r2Key}`);
   execFileSync(NPX_CMD, [
-    'wrangler', 'r2', 'object', 'delete', `${CONFIG.r2BucketName}/${r2Key}`,
+    'wrangler', 'r2', 'object', 'delete', quoteArg(`${CONFIG.r2BucketName}/${r2Key}`),
     '--remote'
   ], { stdio: 'inherit', shell: true });
 }
@@ -316,6 +333,11 @@ async function pruneStaleEntries(processedAlbumIds, processedPhotoUrlsByAlbum) {
   for (const p of photosToDelete) deleteSql += buildDeletePhotoSql(p.url);
   for (const id of albumsToDelete) deleteSql += buildDeleteAlbumSql(id);
   runD1Batch(deleteSql);
+
+  // Otherwise, restoring the exact same folder+metadata later would match
+  // the stale fingerprint and wrongly skip re-creating it in D1.
+  for (const id of albumsToDelete) delete syncManifest[id];
+  saveJsonManifest(SYNC_MANIFEST_PATH, syncManifest);
 
   console.log(`✅ Pruned ${albumsToDelete.length} album(s) and ${photosToDelete.length} additional photo(s).`);
 }
@@ -386,6 +408,19 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
 
   await optimizeAndUploadAlbum(albumPath, albumFolder, r2BasePath, images);
 
+  // Skip the database sync entirely if neither the image list nor
+  // album-info.json changed since the last successful sync -- avoids an
+  // unnecessary wrangler d1 execute (and its confirmation prompt) for
+  // every already-up-to-date album on every run. Independent of the R2
+  // upload manifest above: a photo replaced in place with the same
+  // filename still gets re-uploaded either way, this only gates whether
+  // the SQL upsert runs.
+  const syncFingerprint = JSON.stringify({ images, metadata });
+  if (syncManifest[id] === syncFingerprint) {
+    console.log(`   ✓ Already up to date, skipping database sync`);
+    return { id, photoUrls };
+  }
+
   const name = (metadata.name || defaultAlbumName(albumFolder)).trim();
   const description = (metadata.description || '').trim();
   const category = (metadata.category || '').trim();
@@ -410,6 +445,9 @@ async function processAlbum(albumPath, albumFolder, isPrivate, r2BasePath) {
 
   console.log(`   💾 Syncing to database`);
   runD1Batch(sql);
+
+  syncManifest[id] = syncFingerprint;
+  saveJsonManifest(SYNC_MANIFEST_PATH, syncManifest);
 
   return { id, photoUrls };
 }

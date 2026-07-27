@@ -2,7 +2,7 @@ import { handleVerifyStart, handleVerifyConfirm } from './routes/verify.js';
 import { handleSessionCheck } from './routes/session.js';
 import { handleGetAlbums, handleGetFeatured } from './routes/albums.js';
 import { handleUnlockAlbum } from './routes/unlock.js';
-import { handleUpdateAlbum, handleUpdatePhoto, handleDeletePhoto, handleListSubscribers } from './routes/admin.js';
+import { handleGetAdminAlbums, handleUpdateAlbum, handleUpdatePhoto, handleDeletePhoto, handleListSubscribers } from './routes/admin.js';
 import { isAdminRequest } from './lib/adminAuth.js';
 import { withSecurityHeaders } from './lib/securityHeaders.js';
 import { jsonResponse } from './lib/http.js';
@@ -39,6 +39,10 @@ async function handleApi(request, env, pathname) {
   if (pathname.startsWith('/api/admin/')) {
     if (!isAdminRequest(request, env)) {
       return jsonResponse({ error: 'Forbidden' }, 403);
+    }
+
+    if (pathname === '/api/admin/albums' && request.method === 'GET') {
+      return handleGetAdminAlbums(request, env);
     }
 
     const albumIdMatch = pathname.match(ADMIN_ALBUM_ID_ROUTE);

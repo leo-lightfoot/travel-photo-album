@@ -1,27 +1,61 @@
 import React, { useEffect, useState } from 'react';
-import { useAlbums } from '../hooks/useAlbums';
 
 // No client-side auth check here on purpose -- this route (and /api/admin/*)
 // is protected at the edge by Cloudflare Access on the deployed domain. In
 // local dev there's no Access in front of it, so this page is reachable
 // unauthenticated on localhost; that's expected, not a bug.
 const AdminPage = () => {
-  const { albums: contextAlbums, loadState } = useAlbums();
   const [albums, setAlbums] = useState(null);
+  const [loadError, setLoadError] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [status, setStatus] = useState({});
   const [tagsDraft, setTagsDraft] = useState({});
 
-  // Seeded once from the AlbumsProvider context (already fetched at the app
-  // root) rather than a second independent fetch -- editable form state
-  // still needs its own copy so in-progress edits don't leak into the
-  // shared context other pages read from.
+  // Reads from /api/admin/albums (NOT the visitor /api/albums) so private
+  // albums come back in full -- with their photos -- to edit. That endpoint
+  // lives behind Cloudflare Access, same as the save/delete calls below, so
+  // the Access cookie authorizes this fetch automatically on the deployed
+  // domain. (Locally there's no Access, so this 403s -- expected; the error
+  // branch explains it rather than hanging on "Loading…".)
   useEffect(() => {
-    if (loadState === 'ready') {
-      setAlbums([...contextAlbums.public, ...contextAlbums.private]);
-      setSelectedId((prev) => prev ?? (contextAlbums.public[0]?.id || contextAlbums.private[0]?.id) ?? null);
+    fetch('/api/admin/albums')
+      .then((res) => {
+        if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        const merged = [...(data.public || []), ...(data.private || [])];
+        setAlbums(merged);
+        setSelectedId((prev) => prev ?? merged[0]?.id ?? null);
+      })
+      .catch((err) => {
+        console.error('Failed to load admin albums:', err);
+        setLoadError(true);
+      });
+  }, []);
+
+  const exportSubscribers = async () => {
+    setStatus((s) => ({ ...s, __export: 'saving' }));
+    try {
+      const res = await fetch('/api/admin/subscribers');
+      if (!res.ok) {
+        setStatus((s) => ({ ...s, __export: 'error' }));
+        return;
+      }
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = 'subscribers.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      setStatus((s) => ({ ...s, __export: 'saved' }));
+    } catch {
+      setStatus((s) => ({ ...s, __export: 'error' }));
     }
-  }, [loadState, contextAlbums]);
+  };
 
   const updateAlbumField = (albumId, field, value) => {
     setAlbums((prev) => prev.map((a) => (a.id === albumId ? { ...a, [field]: value } : a)));
@@ -95,6 +129,18 @@ const AdminPage = () => {
     return '';
   };
 
+  if (loadError) {
+    return (
+      <div className="max-w-2xl mx-auto p-8 text-slate-600">
+        <p className="mb-1">Couldn't load albums.</p>
+        <p className="text-sm text-slate-400">
+          Open this page through the Cloudflare Access-protected <code>/admin</code> URL on the live
+          site, signed in with an email on the admin allowlist. (This won't work on localhost, where
+          there's no Access in front of it.)
+        </p>
+      </div>
+    );
+  }
   if (!albums) return <div className="p-8 text-slate-500">Loading…</div>;
 
   const album = albums.find((a) => a.id === selectedId);
@@ -103,15 +149,15 @@ const AdminPage = () => {
     <div className="max-w-4xl mx-auto p-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-light text-slate-800">Admin — Edit Albums</h1>
-        {/* Plain link: the Cloudflare Access cookie rides along on this
-            same-origin navigation, so the admin-gated CSV endpoint authorizes
-            without any extra header handling. */}
-        <a
-          href="/api/admin/subscribers"
+        {/* fetch + blob download rather than a plain <a href> so failures
+            surface (and so it uses the same authorized-fetch path as the
+            save/delete calls, which are known to work). */}
+        <button
+          onClick={exportSubscribers}
           className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded text-sm hover:bg-slate-200 transition"
         >
-          Export subscribers (CSV)
-        </a>
+          Export subscribers (CSV) {statusMark('__export')}
+        </button>
       </div>
 
       <label className="block text-sm text-slate-600 mb-1">Album</label>
@@ -152,13 +198,6 @@ const AdminPage = () => {
           >
             Save album details {statusMark(album.id)}
           </button>
-
-          {!album.photos && (
-            <p className="mt-6 text-sm text-amber-700 bg-amber-50 inline-block px-4 py-2 rounded-full">
-              Photos for this private album aren't available here -- this page needs to be
-              accessed through the Cloudflare Access-protected /admin URL to see them.
-            </p>
-          )}
 
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {(album.photos || []).map((photo) => (

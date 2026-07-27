@@ -13,10 +13,16 @@ const App = () => (
   <BrowserRouter>
     <Routes>
       <Route path="/" element={<LandingPage />} />
-      {/* AlbumsProvider fetches /api/albums, which now requires either a
-          verified visitor session token or Cloudflare Access admin auth --
-          scoped to just these routes so the public landing page (outside
-          this wrapper) never attempts, and fails, that fetch. */}
+      {/* Protected by Cloudflare Access at the edge, not by app code. Reads
+          full album data (private photos included) from its own Access-
+          protected /api/admin/albums, so it lives outside the visitor
+          AlbumsProvider -- that fetches /api/albums, which returns the
+          photoless visitor shape for private albums. */}
+      <Route path="/admin" element={<AdminPage />} />
+      {/* AlbumsProvider fetches /api/albums, which requires a verified
+          visitor session token -- scoped to just these routes so the public
+          landing page (outside this wrapper) never attempts, and fails, that
+          fetch. */}
       <Route
         element={
           <AlbumsProvider>
@@ -26,8 +32,6 @@ const App = () => (
           </AlbumsProvider>
         }
       >
-        {/* Protected by Cloudflare Access at the edge, not by app code */}
-        <Route path="/admin" element={<AdminPage />} />
         <Route
           element={
             <RequireVerifiedVisitor>

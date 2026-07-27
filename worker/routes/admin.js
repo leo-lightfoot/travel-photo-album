@@ -1,4 +1,4 @@
-import { updateAlbum, updatePhoto, deletePhoto } from '../lib/albums.js';
+import { updateAlbum, updatePhoto, deletePhoto, getAlbumsForAdmin } from '../lib/albums.js';
 import { listSubscribers } from '../lib/d1.js';
 import { jsonResponse } from '../lib/http.js';
 
@@ -17,10 +17,31 @@ function csvField(value) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// Caps on admin-editable free text so a stray (or abusive) request can't
+// stuff arbitrarily large blobs into D1. Generous enough that real content
+// never hits them; exceeding one is a 400, not a silent truncation.
+const FIELD_LIMITS = { description: 2000, category: 100, caption: 500, tag: 50, tagCount: 30 };
+
+// Full album data (private albums included, with their photos + secretCode)
+// for the admin editor. Served under /api/admin/* -- and therefore Cloudflare
+// Access-protected -- unlike the public /api/albums, which returns the
+// visitor shape (private albums as photoless teasers). The admin page must
+// read from here, or private albums show up with no photos to edit.
+export async function handleGetAdminAlbums(request, env) {
+  return jsonResponse(await getAlbumsForAdmin(env.DB));
+}
+
 export async function handleUpdateAlbum(request, env, albumId) {
   const body = await readJsonBody(request);
   const description = typeof body?.description === 'string' ? body.description.trim() : '';
   const category = typeof body?.category === 'string' ? body.category.trim() : '';
+
+  if (description.length > FIELD_LIMITS.description) {
+    return jsonResponse({ error: `Description must be ${FIELD_LIMITS.description} characters or fewer.` }, 400);
+  }
+  if (category.length > FIELD_LIMITS.category) {
+    return jsonResponse({ error: `Category must be ${FIELD_LIMITS.category} characters or fewer.` }, 400);
+  }
 
   const updated = await updateAlbum(env.DB, albumId, { description, category });
   if (!updated) return jsonResponse({ error: 'Album not found' }, 404);
@@ -36,6 +57,15 @@ export async function handleUpdatePhoto(request, env) {
     ? body.tags.filter((t) => typeof t === 'string').map((t) => t.trim()).filter(Boolean)
     : [];
   if (!url) return jsonResponse({ error: 'url is required' }, 400);
+  if (caption.length > FIELD_LIMITS.caption) {
+    return jsonResponse({ error: `Caption must be ${FIELD_LIMITS.caption} characters or fewer.` }, 400);
+  }
+  if (tags.length > FIELD_LIMITS.tagCount) {
+    return jsonResponse({ error: `No more than ${FIELD_LIMITS.tagCount} tags.` }, 400);
+  }
+  if (tags.some((t) => t.length > FIELD_LIMITS.tag)) {
+    return jsonResponse({ error: `Each tag must be ${FIELD_LIMITS.tag} characters or fewer.` }, 400);
+  }
 
   const updated = await updatePhoto(env.DB, url, { caption, featured, tags });
   if (!updated) return jsonResponse({ error: 'Photo not found' }, 404);

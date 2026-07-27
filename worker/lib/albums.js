@@ -24,16 +24,17 @@ function rowToAlbum(row, photos) {
   return album;
 }
 
-// The teaser shown for a locked private album in the gallery grid -- cover
-// image and description are fine to show as a preview, but no secretCode
-// and no photos array, since those are only handed over by
-// verifyAlbumUnlock() once the correct passcode has actually been checked
-// server-side.
+// The teaser shown for a locked private album in the gallery grid -- name,
+// description, category, tags and photo count are fine as a preview, but NO
+// imagery at all: not even the cover is sent, since the cover is itself one
+// of the album's photos and a private album should show no photography until
+// its passcode is entered. secretCode and the photos array are likewise
+// withheld -- verifyAlbumUnlock() hands those over only after the code checks
+// out server-side.
 function rowToLockedAlbum(row, photoCount) {
   const album = {
     id: row.id,
     name: row.name,
-    coverImage: row.cover_image,
     photoCount,
     tags: JSON.parse(row.tags || '[]')
   };

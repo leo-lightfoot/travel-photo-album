@@ -27,7 +27,7 @@ const GalleryLayout = () => {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-light text-slate-800">Photo Gallery</h1>
-              <p className="text-slate-500 text-sm mt-1">Professional Photography Collection</p>
+              <p className="text-slate-500 text-sm mt-1">Light and Lore Photography Collection</p>
             </div>
             <div className="flex items-center gap-2">
               {isDetailView && (

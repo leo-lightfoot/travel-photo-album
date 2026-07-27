@@ -5,6 +5,7 @@ import { handleUnlockAlbum } from './routes/unlock.js';
 import { handleGetAdminAlbums, handleUpdateAlbum, handleUpdatePhoto, handleDeletePhoto, handleListSubscribers } from './routes/admin.js';
 import { isAdminRequest } from './lib/adminAuth.js';
 import { withSecurityHeaders } from './lib/securityHeaders.js';
+import { isBlockedBot } from './lib/botBlock.js';
 import { jsonResponse } from './lib/http.js';
 
 const ADMIN_ALBUM_ID_ROUTE = /^\/api\/admin\/albums\/([^/]+)$/;
@@ -68,6 +69,14 @@ async function handleApi(request, env, pathname) {
 
 export default {
   async fetch(request, env) {
+    // Hard-block known AI/LLM scraper bots up front -- belt-and-suspenders on
+    // top of public/robots.txt, which a scraper can just ignore. Regular
+    // search engines are intentionally NOT on this list, so the public
+    // landing page stays indexable (see worker/lib/botBlock.js).
+    if (isBlockedBot(request)) {
+      return withSecurityHeaders(new Response('Forbidden', { status: 403 }), env);
+    }
+
     const url = new URL(request.url);
 
     const response = url.pathname.startsWith('/api/')

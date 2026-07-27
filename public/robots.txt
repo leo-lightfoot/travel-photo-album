@@ -1,0 +1,40 @@
+# --- AI / LLM training + scraping crawlers: not welcome anywhere ---
+# The content-fetching bots in this list are ALSO hard-blocked with a 403 at
+# the Worker (worker/lib/botBlock.js) -- this robots.txt entry is the polite
+# signal, and the only available lever for opt-out-only tokens such as
+# Google-Extended and Applebot-Extended, which have no separate fetching
+# user-agent to block (they govern AI use of content the normal Googlebot /
+# Applebot already crawled, so they must NOT be 403'd).
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: OAI-SearchBot
+User-agent: ClaudeBot
+User-agent: Claude-Web
+User-agent: anthropic-ai
+User-agent: CCBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Bytespider
+User-agent: Amazonbot
+User-agent: meta-externalagent
+User-agent: Diffbot
+User-agent: ImagesiftBot
+User-agent: Omgili
+User-agent: Omgilibot
+User-agent: DataForSeoBot
+User-agent: cohere-ai
+User-agent: YouBot
+User-agent: Timpibot
+Disallow: /
+
+# --- Everyone else (Google, Bing, DuckDuckGo, etc.): index the public
+# landing page, but stay out of the gated gallery, the admin panel, and the
+# API. The gallery already requires an email-verified session, so a crawler
+# can't reach photos anyway; this just keeps those URLs out of the index. ---
+User-agent: *
+Disallow: /galleries
+Disallow: /admin
+Disallow: /api/
+Allow: /

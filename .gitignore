@@ -17,4 +17,7 @@ Thumbs.db
 
 # generate-albums.cjs upload/sync state
 .r2-upload-manifest.json
-.d1-sync-manifest.json
+# Glob covers both the --remote (.d1-sync-manifest.json) and --local
+# (.d1-sync-manifest.local.json) variants -- the latter had leaked a private
+# album's secretCode into git before this was widened.
+.d1-sync-manifest*.json
